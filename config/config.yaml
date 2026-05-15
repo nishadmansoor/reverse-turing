@@ -1,0 +1,50 @@
+# Reverse Turing Test - Configuration
+# =====================================
+
+data:
+  dataset_name: "Hello-SimpleAI/HC3"
+  subset: "all"                        # HC3 subset: all, finance, medicine, open_qa, wiki_csai, reddit_eli5
+  test_size: 0.2
+  val_size: 0.1
+  random_seed: 42
+  max_samples: null                    # Set to an integer to limit dataset size (useful for dev/testing)
+  min_text_length: 50                  # Minimum character length to keep a sample
+  max_text_length: 2048                # Truncate texts beyond this length
+
+preprocessing:
+  lowercase: false                     # BERT is case-sensitive; keep false for BERT, true for visual
+  remove_urls: true
+  remove_special_chars: false          # Keep punctuation — it's a stylometric signal
+  strip_extra_whitespace: true
+
+bert:
+  model_name: "bert-base-uncased"
+  max_token_length: 512
+  batch_size: 16
+  learning_rate: 2.0e-5
+  epochs: 3
+  warmup_ratio: 0.1
+
+visual:
+  image_size: 224                      # Output image dimensions (224x224)
+  features:                            # Stylometric features to render as image channels
+    - sentence_length
+    - punctuation_density
+    - vocabulary_rarity
+    - word_length
+  colormap: "COLORMAP_JET"             # OpenCV colormap for heatmap generation
+
+evaluation:
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+    - confusion_matrix
+    - roc_auc
+
+paths:
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  models: "models"
+  results: "results"
