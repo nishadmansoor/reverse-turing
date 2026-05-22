@@ -3,16 +3,39 @@
 
 <head>
     <title>Reverse Turing Test Results</title>
-
 </head>
 
 <body>
     <h1>Classification Results</h1>
     <h3>Text:</h3>
-    <p>{{ results.text}}</p>
+    <p>{{ results.text }}</p>
+
     <h3>Predictions</h3>
-    <p><strong>BERT:</strong> {{ results.bert }}</p>
-    <p><strong>Stylometric:</strong> {{ results.stylometric }}</p>
+    <p><strong>BERT:</strong> {{ results.bert }} ({{ results.bert_confidence }}% confidence)</p>
+    <p><strong>Stylometric:</strong> {{ results.stylometric }} ({{ results.stylo_confidence }}% confidence)</p>
+
+    <h3>Confidence Gauges</h3>
+    <p>BERT — Human {{ 100 - results.bert_ai_prob }}% | AI {{ results.bert_ai_prob }}%</p>
+    <p>Stylometric — Human {{ 100 - results.stylo_ai_prob }}% | AI {{ results.stylo_ai_prob }}%</p>
+
+    <h3>Feature Comparison</h3>
+    <table border="1">
+        <tr>
+            <th>Feature</th>
+            <th>Your Text</th>
+            <th>Human Avg</th>
+            <th>AI Avg</th>
+        </tr>
+        {% for f in results.features %}
+        <tr>
+            <td>{{ f.name }}</td>
+            <td>{{ f.user_val }}</td>
+            <td>{{ f.human_avg }}</td>
+            <td>{{ f.ai_avg }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
     <br>
     <a href="/">Try a different text</a>
 </body>

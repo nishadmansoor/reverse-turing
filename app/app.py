@@ -30,6 +30,9 @@ X_train = [extract_features(text) for text in train_df["text"]]
 y_train = train_df["label"].values
 stylo_model = LogisticRegression(max_iter=1000)
 stylo_model.fit(X_train, y_train)
+X_train_arr = np.array(X_train)
+human_avg = X_train_arr[y_train == 0].mean(axis=0)
+ai_avg = X_train_arr[y_train == 1].mean(axis=0)
 print("Models loaded")
 
 @app.route("/")
@@ -42,17 +45,40 @@ def predict():
     tokens = tokenizer(text, max_length=256, padding = "max_length", truncation = True, return_tensors="pt")
     with torch.no_grad():
         output = bert_model(**tokens)
-        bert_pred = torch.argmax(output.logits, dim=1).item()
-    #Stylometric 
-    features = np.array(extract_features(text)).reshape(1,-1)
-    stylo_pred = stylo_model.predict(features)[0]
+        probs = torch.softmax(output.logits, dim=1)
+        bert_pred = torch.argmax(probs, dim=1).item()
+        bert_confidence = round(probs[0][bert_pred].item() * 100, 1)
+        bert_ai_prob = round(probs[0][1].item() * 100, 1)
+    #Stylometric
+    features = extract_features(text) 
+    features_arr = np.array(extract_features(text)).reshape(1,-1)
+    stylo_pred = stylo_model.predict(features_arr)[0]
+    stylo_proba = stylo_model.predict_proba(features_arr)[0]
+    stylo_confidence = round(stylo_proba[stylo_pred] * 100, 1)
+    stylo_ai_prob = round(stylo_proba[1] * 100, 1)
+
+    #Feature Comparison
+    feature_comparison = []
+    names = ["Avg Sentence Length", "Sentence Length Variance", "Avg Word Length", "Vocabulary Richness", "Punctuation Density"]
+    for i, name in enumerate(names):
+        feature_comparison.append({
+            "name": name,
+            "user_val": round(features[i], 2),
+            "human_avg": round(human_avg[i], 2),
+            "ai_avg": round(ai_avg[i], 2),
+        })
 
     #Results 
     results = {
-        "text": text[:200],
-        "bert": "AI" if bert_pred == 1 else "Human", 
-        "stylometric": "AI" if stylo_pred == 1 else "Human"
-    }
+            "text": text[:300],
+            "bert": "AI" if bert_pred == 1 else "Human",
+            "bert_confidence": bert_confidence,
+            "bert_ai_prob": bert_ai_prob,
+            "stylometric": "AI" if stylo_pred == 1 else "Human",
+            "stylo_confidence": stylo_confidence,
+            "stylo_ai_prob": stylo_ai_prob,
+            "features": feature_comparison,
+        }
     return render_template("results.html", results=results)
 if __name__ == "__main__":
     app.run(debug=True)
