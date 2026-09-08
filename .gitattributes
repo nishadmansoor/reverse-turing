@@ -1,0 +1,5 @@
+models/bert_classifier/** filter=lfs diff=lfs merge=lfs -text
+models/cnn_classifier.pt filter=lfs diff=lfs merge=lfs -text
+
+# Small pickles (a few hundred bytes each) — plain git, not LFS.
+# artifacts/explorer.json is ~1 MB and also fine as a normal blob.

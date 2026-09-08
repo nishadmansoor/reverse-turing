@@ -1,43 +1,207 @@
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
+{% set page = "home" %}
+{% block title %}Result — Reverse Turing Test{% endblock %}
+{% block tagline %}Three models, one verdict.{% endblock %}
 
-<head>
-    <title>Reverse Turing Test Results</title>
-</head>
+{% block head %}
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+{% endblock %}
 
-<body>
-    <h1>Classification Results</h1>
-    <h3>Text:</h3>
-    <p>{{ results.text }}</p>
+{% block content %}
 
-    <h3>Predictions</h3>
-    <p><strong>BERT:</strong> {{ results.bert }} ({{ results.bert_confidence }}% confidence)</p>
-    <p><strong>Stylometric:</strong> {{ results.stylometric }} ({{ results.stylo_confidence }}% confidence)</p>
+<!-- The verdict is one number: a stat tile, not a chart. -->
+<div class="verdict verdict-{{ results.ensemble | lower }}">
+    <div class="verdict-eyebrow">Ensemble verdict</div>
+    <div class="verdict-value">{{ results.ensemble }}</div>
+    <div class="verdict-sub">
+        {{ results.ensemble_confidence }}% confidence
+        <span class="dot">·</span>
+        {{ results.word_count }} words analysed
+    </div>
+</div>
 
-    <h3>Confidence Gauges</h3>
-    <p>BERT — Human {{ 100 - results.bert_ai_prob }}% | AI {{ results.bert_ai_prob }}%</p>
-    <p>Stylometric — Human {{ 100 - results.stylo_ai_prob }}% | AI {{ results.stylo_ai_prob }}%</p>
+{% if results.dissenters %}
+<div class="dissent">
+    <strong>{{ results.dissenters | length }} of 3 models disagreed.</strong>
+    {{ results.dissenters | join(" and ") }}
+    {{ "reads" if results.dissenters | length == 1 else "read" }} this as
+    <span class="tok tok-{{ 'human' if results.ensemble == 'AI' else 'ai' }}">{{ "Human" if results.ensemble == "AI" else "AI" }}</span>.
+    The ensemble weighs each model by how reliable it proved on held-out data.
+</div>
+{% else %}
+<div class="dissent agree">
+    <strong>All three models agree.</strong>
+    Independent signals — language, style statistics, and visual structure — point the same way.
+</div>
+{% endif %}
 
-    <h3>Feature Comparison</h3>
-    <table border="1">
-        <tr>
-            <th>Feature</th>
-            <th>Your Text</th>
-            <th>Human Avg</th>
-            <th>AI Avg</th>
-        </tr>
-        {% for f in results.features %}
-        <tr>
-            <td>{{ f.name }}</td>
-            <td>{{ f.user_val }}</td>
-            <td>{{ f.human_avg }}</td>
-            <td>{{ f.ai_avg }}</td>
-        </tr>
-        {% endfor %}
+<h2 class="section-title">Per-model breakdown</h2>
+<div class="models-grid">
+    {% for m in [
+        {"name": "BERT Transformer", "pred": results.bert, "conf": results.bert_confidence, "ai": results.bert_ai_prob, "note": "Reads meaning and phrasing"},
+        {"name": "Stylometric", "pred": results.stylometric, "conf": results.stylo_confidence, "ai": results.stylo_ai_prob, "note": "Sentence rhythm and vocabulary"},
+        {"name": "Visual CNN", "pred": results.opencv, "conf": results.opencv_confidence, "ai": results.opencv_ai_prob, "note": "Text rendered as a heatmap"}
+    ] %}
+    <div class="model-card">
+        <h3>{{ m.name }}</h3>
+        <div class="tok tok-{{ m.pred | lower }} model-pred">{{ m.pred }}</div>
+        <div class="model-conf">{{ m.conf }}% confident</div>
+        <!-- 2px gap between the two fills, per mark spec -->
+        <div class="split" role="img"
+             aria-label="{{ m.ai }} percent AI, {{ (100 - m.ai) | round(1) }} percent human">
+            <div class="split-human" data-width="{{ 100 - m.ai }}"></div>
+            <div class="split-ai" data-width="{{ m.ai }}"></div>
+        </div>
+        <div class="model-note">{{ m.note }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<h2 class="section-title">Prediction flow</h2>
+<div class="panel">
+    <div class="chart-legend">
+        <span class="tok tok-human">Human</span>
+        <span class="tok tok-ai">AI</span>
+        <span class="legend-note">Ribbon colour is the prediction each model contributed.</span>
+    </div>
+    <div id="sankey-chart"></div>
+</div>
+
+<h2 class="section-title">Feature analysis</h2>
+<div class="panel">
+    <table class="data">
+        <thead>
+            <tr>
+                <th>Feature</th>
+                <th>Your text</th>
+                <th>Human avg</th>
+                <th>AI avg</th>
+                <th>Closer to</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in results.features %}
+            <tr>
+                <td>{{ f.name }}</td>
+                <td>{{ f.user_val }}</td>
+                <td>{{ f.human_avg }}</td>
+                <td>{{ f.ai_avg }}</td>
+                <td><span class="tok tok-{{ f.closer_to }}">{{ f.closer_to | capitalize }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
     </table>
+</div>
+<p class="muted" style="margin-top:10px;">
+    Averages come from the training split. A single feature leaning one way means
+    little on its own — the stylometric model weighs all five together.
+</p>
 
-    <br>
-    <a href="/">Try a different text</a>
-</body>
+<h2 class="section-title">Your text</h2>
+<div class="panel text-preview">{{ results.text }}{% if results.text_truncated %}<span class="muted">… (truncated for display)</span>{% endif %}</div>
 
-</html>
+<div class="actions">
+    <a href="/" class="btn btn-quiet">Try another text</a>
+    <a href="/explore" class="btn btn-quiet">See it on the map</a>
+</div>
+
+<style>
+    .verdict {
+        border-radius: var(--radius);
+        border: 1px solid;
+        padding: 28px 24px;
+        text-align: center;
+        margin-bottom: 16px;
+    }
+    .verdict-human { background: rgba(25,158,112,0.09); border-color: rgba(25,158,112,0.38); }
+    .verdict-ai    { background: rgba(144,133,233,0.09); border-color: rgba(144,133,233,0.38); }
+    .verdict-eyebrow {
+        font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.11em;
+        color: var(--ink-muted); margin-bottom: 6px;
+    }
+    .verdict-value { font-size: clamp(2.2rem, 7vw, 3rem); font-weight: 750; line-height: 1.1; }
+    .verdict-human .verdict-value { color: var(--human); }
+    .verdict-ai .verdict-value { color: var(--ai); }
+    .verdict-sub { color: var(--ink-2); font-size: 0.88rem; margin-top: 8px; font-variant-numeric: tabular-nums; }
+    .dot { color: var(--ink-muted); margin: 0 4px; }
+
+    .dissent {
+        background: rgba(250,178,25,0.08);
+        border: 1px solid rgba(250,178,25,0.3);
+        border-radius: 10px;
+        padding: 13px 16px;
+        font-size: 0.88rem;
+        color: var(--ink-2);
+    }
+    .dissent.agree { background: rgba(12,163,12,0.07); border-color: rgba(12,163,12,0.28); }
+    .dissent strong { color: var(--ink); }
+    .dissent .tok { vertical-align: baseline; }
+
+    .models-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    @media (max-width: 700px) { .models-grid { grid-template-columns: 1fr; } }
+    .model-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 17px;
+    }
+    .model-card h3 {
+        font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em;
+        color: var(--ink-muted); font-weight: 600; margin-bottom: 10px;
+    }
+    .model-pred { font-size: 1.15rem; }
+    .model-conf { font-size: 0.83rem; color: var(--ink-2); margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .split { display: flex; gap: 2px; height: 6px; margin-top: 12px; }
+    .split-human { background: var(--human); border-radius: 3px 0 0 3px; }
+    .split-ai    { background: var(--ai);    border-radius: 0 3px 3px 0; }
+    .model-note { font-size: 0.76rem; color: var(--ink-muted); margin-top: 10px; }
+
+    .chart-legend { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+    .legend-note { font-size: 0.78rem; color: var(--ink-muted); }
+    #sankey-chart { width: 100%; height: 320px; }
+
+    .text-preview {
+        font-size: 0.88rem; line-height: 1.65; color: var(--ink-2);
+        max-height: 200px; overflow-y: auto; white-space: pre-wrap;
+    }
+    .actions { display: flex; gap: 10px; margin-top: 32px; flex-wrap: wrap; }
+    .actions .btn { text-decoration: none; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script id="sankey-json" type="application/json">{{ results.sankey | tojson }}</script>
+<script>
+    document.querySelectorAll("[data-width]").forEach(function (el) {
+        el.style.width = el.getAttribute("data-width") + "%";
+    });
+
+    var d = JSON.parse(document.getElementById("sankey-json").textContent);
+
+    Plotly.newPlot("sankey-chart", [{
+        type: "sankey",
+        orientation: "h",
+        arrangement: "snap",
+        node: {
+            pad: 26,
+            thickness: 14,
+            line: { color: "#1a1a19", width: 2 },   // 2px surface ring
+            label: d.labels,
+            color: d.node_colors,
+            hovertemplate: "%{label}<extra></extra>"
+        },
+        link: {
+            source: d.sources,
+            target: d.targets,
+            value: d.values,
+            color: d.link_colors,
+            hovertemplate: "%{source.label} → %{target.label}<extra></extra>"
+        }
+    }], {
+        font: { color: "#c3c2b7", size: 12, family: "system-ui, -apple-system, sans-serif" },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        margin: { l: 8, r: 8, t: 8, b: 8 }
+    }, { responsive: true, displayModeBar: false });
+</script>
+{% endblock %}

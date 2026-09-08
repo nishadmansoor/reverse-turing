@@ -1,0 +1,22 @@
+# Training, data preparation, and evaluation dependencies.
+# Install these to retrain models or rebuild artifacts; the deployed app
+# does not need them.
+
+-r requirements.txt
+
+# Data pipeline
+pandas>=2.0.0
+datasets>=2.14.0
+pyyaml>=6.0
+requests>=2.31.0
+
+# Training loop
+tqdm>=4.65.0
+
+# Evaluation & plots
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Notebooks
+jupyter>=1.0.0
+ipykernel>=6.0.0

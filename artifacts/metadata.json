@@ -1,0 +1,41 @@
+{
+  "built_at": "2026-09-08T00:42:47+00:00",
+  "dataset": "raid",
+  "train_rows": 111006,
+  "test_rows": 31221,
+  "explorer_rows": 5000,
+  "feature_names": [
+    "Avg Sentence Length",
+    "Sentence Length Variance",
+    "Avg Word Length",
+    "Vocabulary Richness",
+    "Punctuation Density"
+  ],
+  "feature_averages": {
+    "human": [
+      28.535916953295878,
+      268.47003930454383,
+      5.48993314528308,
+      0.6252450105902857,
+      0.027713028083622464
+    ],
+    "ai": [
+      27.290186743242657,
+      338.4332926736297,
+      5.9921081373929965,
+      0.6124465066669894,
+      0.022910288725088056
+    ]
+  },
+  "pca_variance_explained": [
+    0.2735399586338513,
+    0.24980147134805997
+  ],
+  "stylometric_train_accuracy": 0.7699133380177648,
+  "explorer_sample_accuracy": {
+    "stylometric": 0.7746,
+    "bert": 0.988,
+    "cnn": 0.9774,
+    "ensemble": 0.9922
+  }
+}

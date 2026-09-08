@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% set page = "explore" %}
+{% block title %}Dataset Explorer — Reverse Turing Test{% endblock %}
+{% block tagline %}Where does your writing sit among {{ "{:,}".format(metadata.explorer_rows) }} labelled samples?{% endblock %}
+
+{% block head %}
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<div class="stats-row">
+    <div class="stat">
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-label">Samples plotted</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value tok-human" id="stat-human">—</div>
+        <div class="stat-label">Human</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value tok-ai" id="stat-ai">—</div>
+        <div class="stat-label">AI</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value" id="stat-acc">—</div>
+        <div class="stat-label" id="stat-acc-label">Ensemble accuracy</div>
+    </div>
+</div>
+
+<h2 class="section-title">Overlay your own text</h2>
+<div class="panel">
+    <div class="overlay-row">
+        <textarea id="user-text" rows="2"
+                  placeholder="Paste text to drop it onto the map as a marked point…"></textarea>
+        <button class="btn" id="plot-btn">Plot it</button>
+    </div>
+    <p class="muted" id="overlay-status" style="margin-top:8px;"></p>
+</div>
+
+<h2 class="section-title">Feature space</h2>
+<div class="filters">
+    <label for="color-mode">View</label>
+    <select id="color-mode">
+        <option value="true_label">True label</option>
+        <option value="bert">Where BERT is wrong</option>
+        <option value="stylo">Where Stylometric is wrong</option>
+        <option value="cnn">Where the CNN is wrong</option>
+    </select>
+</div>
+
+<div class="panel">
+    <div id="scatter-chart"><p class="loading">Loading dataset…</p></div>
+    <p class="axis-note">
+        Each point is one labelled sample, positioned by the two strongest
+        directions of variation in its five stylometric features
+        (PC1 {{ (var_explained[0] * 100) | round(1) }}%, PC2 {{ (var_explained[1] * 100) | round(1) }}% of variance).
+        Nearby points have similar writing rhythm — not similar topics.
+    </p>
+</div>
+
+<h2 class="section-title">Reading this plot</h2>
+<div class="panel">
+    <p class="muted">
+        The classes overlap heavily, and that overlap is the honest result: plenty
+        of human writing is statistically indistinguishable from generated text on
+        these five features alone. That is precisely why the ensemble also reads
+        the language itself rather than relying on style statistics.
+        Switch the view above to see which samples each model gets wrong —
+        errors cluster where the classes intermingle.
+    </p>
+</div>
+
+<style>
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
+    @media (max-width: 620px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+    .stat {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: 10px; padding: 15px; text-align: center;
+    }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--ink); }
+    .stat-value.tok-human { color: var(--human); }
+    .stat-value.tok-ai { color: var(--ai); }
+    .stat-label {
+        font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em;
+        color: var(--ink-muted); margin-top: 3px;
+    }
+
+    .overlay-row { display: flex; gap: 10px; align-items: flex-start; }
+    @media (max-width: 620px) { .overlay-row { flex-direction: column; } }
+    .overlay-row textarea { min-height: 58px; flex: 1; }
+    .overlay-row .btn { white-space: nowrap; }
+
+    /* Filters sit in one row above the chart. */
+    .filters { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .filters label { font-size: 0.8rem; color: var(--ink-muted); }
+    .filters select {
+        background: var(--surface); border: 1px solid var(--border);
+        color: var(--ink-2); padding: 7px 11px; border-radius: 8px;
+        font-size: 0.85rem; font-family: inherit;
+    }
+    .filters select:focus { outline: none; border-color: var(--ai); }
+
+    #scatter-chart { width: 100%; height: 500px; }
+    .loading { text-align: center; color: var(--ink-muted); padding: 80px 0; font-size: 0.9rem; }
+    .axis-note { font-size: 0.78rem; color: var(--ink-muted); margin-top: 10px; line-height: 1.6; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const HUMAN = "#199e70", AI = "#9085e9", MUTED = "#898781", CRITICAL = "#d03b3b";
+    const ACCURACIES = {{ metadata.explorer_sample_accuracy | tojson }};
+    let data = null, userPoint = null;
+
+    const layout = {
+        font: { color: "#c3c2b7", size: 12, family: "system-ui, -apple-system, sans-serif" },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        xaxis: { title: "PC1", gridcolor: "#2c2c2a", zerolinecolor: "#383835", linecolor: "#383835" },
+        yaxis: { title: "PC2", gridcolor: "#2c2c2a", zerolinecolor: "#383835", linecolor: "#383835" },
+        margin: { l: 55, r: 16, t: 10, b: 48 },
+        showlegend: true,
+        legend: { orientation: "h", y: -0.16, font: { size: 11 } },
+        hovermode: "closest"
+    };
+    const config = { responsive: true, displayModeBar: false };
+
+    function hover(i) {
+        return "True: " + (data.true_label[i] ? "AI" : "Human") +
+               "<br>BERT: " + (data.bert_pred[i] ? "AI" : "Human") +
+               "<br>Stylometric: " + (data.stylo_pred[i] ? "AI" : "Human") +
+               (data.cnn_pred ? "<br>CNN: " + (data.cnn_pred[i] ? "AI" : "Human") : "") +
+               "<br><br>" + data.text_preview[i].replace(/(.{48})/g, "$1<br>") + "…";
+    }
+
+    function subset(indices, name, color, symbol, size, opacity) {
+        return {
+            x: indices.map(i => data.x[i]),
+            y: indices.map(i => data.y[i]),
+            text: indices.map(hover),
+            name: name,
+            mode: "markers",
+            type: "scattergl",
+            marker: { color: color, size: size, symbol: symbol, opacity: opacity, line: { width: 0 } },
+            hoverinfo: "text"
+        };
+    }
+
+    function traces(mode) {
+        const n = data.true_label.length;
+        const all = Array.from({ length: n }, (_, i) => i);
+
+        if (mode === "true_label") {
+            return [
+                subset(all.filter(i => !data.true_label[i]), "Human", HUMAN, "circle", 5, 0.55),
+                subset(all.filter(i =>  data.true_label[i]), "AI",    AI,    "circle", 5, 0.55)
+            ];
+        }
+
+        // Error views use emphasis, not a red/green pair: correct points recede
+        // to grey, errors are highlighted AND carry a distinct symbol, so the
+        // distinction never rests on colour alone.
+        const key = mode === "bert" ? "bert_pred" : mode === "stylo" ? "stylo_pred" : "cnn_pred";
+        const right = all.filter(i => data[key][i] === data.true_label[i]);
+        const wrong = all.filter(i => data[key][i] !== data.true_label[i]);
+        return [
+            subset(right, "Correct (" + right.length.toLocaleString() + ")", MUTED, "circle", 4, 0.3),
+            subset(wrong, "Misclassified (" + wrong.length.toLocaleString() + ")", CRITICAL, "x", 7, 0.85)
+        ];
+    }
+
+    function render() {
+        const mode = document.getElementById("color-mode").value;
+        const t = traces(mode);
+        if (userPoint) t.push(userPoint);
+        Plotly.react("scatter-chart", t, layout, config);
+
+        const el = document.getElementById("stat-acc");
+        const label = document.getElementById("stat-acc-label");
+        const map = { bert: "bert", stylo: "stylometric", cnn: "cnn" };
+        if (mode === "true_label") {
+            const best = ACCURACIES.ensemble !== undefined ? ACCURACIES.ensemble : null;
+            el.textContent = best !== null ? (best * 100).toFixed(1) + "%" : "—";
+            label.textContent = "Ensemble accuracy";
+        } else {
+            const acc = ACCURACIES[map[mode]];
+            el.textContent = acc !== undefined ? (acc * 100).toFixed(1) + "%" : "—";
+            label.textContent = mode === "bert" ? "BERT accuracy"
+                              : mode === "stylo" ? "Stylometric accuracy" : "CNN accuracy";
+        }
+    }
+
+    fetch("/api/explorer-data").then(r => r.json()).then(payload => {
+        data = payload;
+        const n = data.true_label.length;
+        const human = data.true_label.filter(l => l === 0).length;
+        document.getElementById("stat-total").textContent = n.toLocaleString();
+        document.getElementById("stat-human").textContent = human.toLocaleString();
+        document.getElementById("stat-ai").textContent = (n - human).toLocaleString();
+        render();
+    });
+
+    document.getElementById("color-mode").addEventListener("change", render);
+
+    document.getElementById("plot-btn").addEventListener("click", function () {
+        const text = document.getElementById("user-text").value.trim();
+        const status = document.getElementById("overlay-status");
+        if (text.length < 20) { status.textContent = "Enter at least 20 characters."; return; }
+        status.textContent = "Projecting…";
+
+        fetch("/api/pca-transform", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text })
+        })
+        .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)))
+        .then(c => {
+            userPoint = {
+                x: [c.x], y: [c.y], text: ["Your text"],
+                name: "Your text", mode: "markers", type: "scattergl",
+                marker: { color: "#fab219", size: 15, symbol: "star",
+                          line: { color: "#1a1a19", width: 2 } },
+                hoverinfo: "text"
+            };
+            render();
+            status.textContent = "Plotted as the gold star.";
+        })
+        .catch(e => { status.textContent = e.error || "Could not project that text."; });
+    });
+</script>
+{% endblock %}

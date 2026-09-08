@@ -1,0 +1,27 @@
+# Keep the build context small. data/ alone is ~7.9 GB and none of it is
+# needed at runtime — the app serves prebuilt artifacts, not raw datasets.
+data/
+results/
+notebooks/
+.git/
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.DS_Store
+**/.DS_Store
+.vscode/
+.idea/
+*.log
+
+# Training-only code — not imported by the app.
+src/pipeline.py
+src/raid_pipeline.py
+src/retrain.py
+src/train_meta.py
+src/bert.py
+src/opencv.py
+src/stylometric.py
+src/evaluation.py
+src/visualizations.py

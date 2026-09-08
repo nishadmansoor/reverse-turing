@@ -1,19 +1,120 @@
-<!DOCTYPE html>
+{% extends "base.html" %}
+{% set page = "home" %}
 
-<html>
+{% block content %}
+<form method="POST" action="/predict" id="classify-form">
+    <textarea name="text" id="text-input" required
+              placeholder="Paste a paragraph — an essay, a chat reply, a forum post — and three models will each judge it independently."></textarea>
 
-<head>
-    <title>Reverse Turing Test</title>
-</head>
+    <div class="form-row">
+        <button type="submit" class="btn" id="submit-btn">
+            <span id="btn-label">Classify text</span>
+        </button>
+        <span class="counter" id="counter">0 characters</span>
+    </div>
+</form>
 
-<body>
-    <h1>Welcome to the Reverse Turing Test</h1>
-    <p>This is a simple web application to demonstrate the Reverse Turing Test.</p>
-    <p>Paste text below to classify it as Human or AI.</p>
-    <form method="POST" action="/predict">
-        <textarea name="text" rows="4" cols="50"></textarea><br><br>
-        <input type="submit" value="Classify">
-    </form>
-</body>
+<h2 class="section-title">Or try a sample</h2>
+<div class="examples">
+    {% for ex in examples %}
+    <button type="button" class="example" data-text="{{ ex.text }}">
+        <span class="example-label">{{ ex.label }}</span>
+        <span class="example-hint">{{ ex.hint }}</span>
+    </button>
+    {% endfor %}
+</div>
+<p class="muted" style="margin-top:10px;">
+    These illustrate writing <em>registers</em>, not labelled ground truth — they
+    were composed for the demo, so treat the verdicts as a look at how the models
+    respond to style, not as a scorecard. For measured accuracy on held-out data,
+    see <a href="/about" style="color:var(--ai);">Method &amp; Results</a>.
+</p>
 
-</html>
+<h2 class="section-title">How it works</h2>
+<div class="panel">
+    <p class="how">Three independent classifiers each read the text, and a fourth model —
+    a stacked meta-classifier fitted on held-out data — decides how much to trust each one.</p>
+    <ol class="steps">
+        <li><strong>Transformer</strong> — a fine-tuned DistilBERT reading the text as language.</li>
+        <li><strong>Stylometric</strong> — logistic regression over sentence rhythm, vocabulary richness, and punctuation.</li>
+        <li><strong>Visual CNN</strong> — renders the text as a heatmap image and classifies the <em>texture</em> of its structure.</li>
+    </ol>
+    <p class="how muted" style="margin-top:14px;">
+        The interesting part is where they disagree. Short text starves the stylometric
+        features; heavily edited text confuses the transformer. The
+        <a href="/about">method page</a> reports where each one fails.
+    </p>
+</div>
+
+<style>
+    .form-row {
+        display: flex; align-items: center; gap: 14px;
+        margin-top: 14px; flex-wrap: wrap;
+    }
+    .counter { color: var(--ink-muted); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+    .counter.short { color: var(--warning); }
+
+    .examples { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 620px) { .examples { grid-template-columns: 1fr; } }
+    .example {
+        text-align: left;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 13px 15px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: border-color 0.15s, background 0.15s;
+        display: flex; flex-direction: column; gap: 3px;
+    }
+    .example:hover { border-color: var(--ai); background: var(--surface-2); }
+    .example-label { color: var(--ink); font-size: 0.88rem; font-weight: 620; }
+    .example-hint  { color: var(--ink-muted); font-size: 0.79rem; line-height: 1.45; }
+
+    .how { font-size: 0.9rem; color: var(--ink-2); }
+    .how a { color: var(--ai); }
+    .steps { margin: 14px 0 0; padding-left: 20px; display: grid; gap: 8px; }
+    .steps li { font-size: 0.88rem; color: var(--ink-2); }
+    .steps strong { color: var(--ink); font-weight: 620; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const input = document.getElementById("text-input");
+    const counter = document.getElementById("counter");
+    const form = document.getElementById("classify-form");
+    const btn = document.getElementById("submit-btn");
+    const btnLabel = document.getElementById("btn-label");
+    const MIN = 20;
+
+    function updateCounter() {
+        const n = input.value.trim().length;
+        counter.textContent = n === 0
+            ? "0 characters"
+            : n < MIN
+                ? `${n} characters — need at least ${MIN}`
+                : `${n.toLocaleString()} characters`;
+        counter.classList.toggle("short", n > 0 && n < MIN);
+    }
+
+    input.addEventListener("input", updateCounter);
+
+    document.querySelectorAll(".example").forEach(function (el) {
+        el.addEventListener("click", function () {
+            input.value = el.getAttribute("data-text");
+            updateCounter();
+            input.focus();
+            input.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+    });
+
+    // Three models run on each submit; without feedback the wait reads as a hang.
+    form.addEventListener("submit", function () {
+        btn.disabled = true;
+        btnLabel.textContent = "Running three models…";
+    });
+
+    updateCounter();
+</script>
+{% endblock %}

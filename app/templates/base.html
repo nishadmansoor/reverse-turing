@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Reverse Turing Test{% endblock %}</title>
+    <meta name="description" content="An ensemble of three classifiers — a fine-tuned transformer, a stylometric model, and a CNN reading text as images — that tries to tell AI-generated text from human writing.">
+    {% block head %}{% endblock %}
+    <style>
+        /* Palette: validated against the dark chart surface with
+           scripts/validate_palette.js. Human/AI is the one categorical pair
+           carrying meaning, and it clears every CVD gate all-pairs. */
+        :root {
+            --plane:        #0d0d0d;
+            --surface:      #1a1a19;
+            --surface-2:    #232322;
+            --ink:          #ffffff;
+            --ink-2:        #c3c2b7;
+            --ink-muted:    #898781;
+            --grid:         #2c2c2a;
+            --baseline:     #383835;
+            --border:       rgba(255, 255, 255, 0.10);
+
+            --human:        #199e70;
+            --ai:           #9085e9;
+            --critical:     #d03b3b;
+            --good:         #0ca30c;
+            --warning:      #fab219;
+
+            --radius:       12px;
+            --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--sans);
+            background: var(--plane);
+            color: var(--ink-2);
+            min-height: 100vh;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container { max-width: 860px; margin: 0 auto; padding: 48px 24px 80px; }
+
+        /* ---- Header ---- */
+        .masthead { margin-bottom: 36px; }
+        .masthead h1 {
+            font-size: clamp(1.6rem, 4vw, 2.1rem);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            margin-bottom: 6px;
+        }
+        .masthead .tagline { color: var(--ink-muted); font-size: 0.95rem; }
+        .masthead a { color: inherit; text-decoration: none; }
+
+        nav.crumbs {
+            display: flex; gap: 4px; flex-wrap: wrap;
+            margin-bottom: 28px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0;
+        }
+        nav.crumbs a {
+            padding: 9px 14px;
+            font-size: 0.88rem;
+            color: var(--ink-muted);
+            text-decoration: none;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        nav.crumbs a:hover { color: var(--ink-2); }
+        nav.crumbs a.active { color: var(--ink); border-bottom-color: var(--ai); }
+
+        /* ---- Cards & panels ---- */
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+        }
+        .section-title {
+            font-size: 0.78rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.09em;
+            color: var(--ink-muted);
+            margin: 36px 0 14px;
+        }
+        .section-title:first-of-type { margin-top: 0; }
+
+        /* ---- Forms ---- */
+        textarea {
+            width: 100%;
+            min-height: 190px;
+            padding: 15px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--ink);
+            font-size: 0.98rem;
+            font-family: inherit;
+            line-height: 1.6;
+            resize: vertical;
+            transition: border-color 0.15s;
+        }
+        textarea:focus { outline: none; border-color: var(--ai); }
+        textarea::placeholder { color: #5c5b57; }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 12px 24px;
+            background: var(--ai);
+            color: #12111c;
+            border: none;
+            border-radius: 9px;
+            font-size: 0.95rem;
+            font-weight: 650;
+            font-family: inherit;
+            cursor: pointer;
+            transition: filter 0.15s;
+        }
+        .btn:hover { filter: brightness(1.1); }
+        .btn:disabled { opacity: 0.55; cursor: progress; }
+        .btn-quiet {
+            background: var(--surface-2);
+            color: var(--ink-2);
+            border: 1px solid var(--border);
+            text-decoration: none;
+        }
+        .btn-quiet:hover { background: #2c2c2a; color: var(--ink); }
+
+        .flash {
+            border-radius: 9px;
+            padding: 12px 15px;
+            margin-bottom: 18px;
+            font-size: 0.9rem;
+            border: 1px solid;
+        }
+        .flash-error  { background: rgba(208,59,59,0.10); border-color: rgba(208,59,59,0.4); color: #f0a3a3; }
+        .flash-notice { background: rgba(250,178,25,0.10); border-color: rgba(250,178,25,0.35); color: #f5cf83; }
+
+        /* ---- Class tokens: identity is never colour-alone; each swatch
+               sits beside its label. ---- */
+        .tok { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; }
+        .tok::before {
+            content: ""; width: 9px; height: 9px; border-radius: 2px;
+            background: currentColor; flex-shrink: 0;
+        }
+        .tok-human { color: var(--human); }
+        .tok-ai    { color: var(--ai); }
+
+        table.data {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88rem;
+        }
+        table.data th {
+            text-align: left;
+            padding: 8px 12px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--ink-muted);
+            border-bottom: 1px solid var(--baseline);
+        }
+        table.data td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--grid);
+            font-variant-numeric: tabular-nums;
+        }
+        table.data td:first-child { color: var(--ink); font-variant-numeric: normal; }
+        table.data tr:last-child td { border-bottom: none; }
+
+        .muted { color: var(--ink-muted); font-size: 0.85rem; }
+        .footnote {
+            margin-top: 40px; padding-top: 20px;
+            border-top: 1px solid var(--border);
+            color: var(--ink-muted); font-size: 0.8rem;
+        }
+        .footnote a { color: var(--ink-2); }
+
+        @media (max-width: 620px) {
+            .container { padding: 28px 16px 60px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="masthead">
+            <h1><a href="/">Reverse Turing Test</a></h1>
+            <p class="tagline">{% block tagline %}Can a model tell whether a model wrote this?{% endblock %}</p>
+        </header>
+
+        <nav class="crumbs">
+            <a href="/" class="{% if page == 'home' %}active{% endif %}">Classify</a>
+            <a href="/explore" class="{% if page == 'explore' %}active{% endif %}">Dataset Explorer</a>
+            <a href="/about" class="{% if page == 'about' %}active{% endif %}">Method &amp; Results</a>
+        </nav>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="flash flash-{{ 'error' if category == 'error' else 'notice' }}">{{ message }}</div>
+            {% endfor %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+
+        <div class="footnote">
+            {% block footnote %}
+            Trained on {{ metadata.dataset | upper if metadata else "—" }}.
+            Predictions are probabilistic and should not be treated as proof of authorship.
+            {% endblock %}
+        </div>
+    </div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

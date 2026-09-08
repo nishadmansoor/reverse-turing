@@ -1,12 +1,17 @@
-# Data
-data/raw/
-data/processed/
+# Datasets — large and reproducible from the pipelines.
+#   HC3:  python src/pipeline.py
+#   RAID: python src/raid_pipeline.py --download
+data/
 
-# Models
-models/
+# Training/eval outputs: keep the small JSON reports (they back the Method &
+# Results page and document the measured numbers), drop the bulky CSVs.
+results/*.csv
+results/*.png
 
-# Results
-results/
+# NOTE: models/ and artifacts/ are intentionally NOT ignored.
+# The deployed app loads them directly, and committing them is what makes the
+# Space buildable and the repo runnable after a clone. Weights are tracked via
+# git-lfs — see .gitattributes.
 
 # Python
 __pycache__/

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% set page = "about" %}
+{% block title %}Method &amp; Results — Reverse Turing Test{% endblock %}
+{% block tagline %}What was measured, how, and where it fails.{% endblock %}
+
+{% block content %}
+
+<h2 class="section-title">Results</h2>
+{% if evaluation %}
+<div class="panel">
+    <table class="data">
+        <thead>
+            <tr>
+                <th>Model</th>
+                <th>Accuracy</th>
+                <th>F1</th>
+                <th>ROC&nbsp;AUC</th>
+                <th>vs. baseline</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% set display = {
+                "transformer": "Transformer (DistilBERT)",
+                "stylometric": "Stylometric",
+                "cnn": "Visual CNN",
+                "ensemble": "Ensemble (stacked)"
+            } %}
+            {% for name, m in evaluation.models.items() %}
+            <tr class="{{ 'row-highlight' if name == 'ensemble' }}">
+                <td>{{ display.get(name, name | capitalize) }}</td>
+                <td>{{ (m.accuracy * 100) | round(1) }}%</td>
+                <td>{{ (m.f1 * 100) | round(1) }}%</td>
+                <td>{{ (m.roc_auc * 100) | round(1) }}%</td>
+                <td class="delta">{{ "%+.1f"|format((m.accuracy - m.majority_baseline) * 100) }} pts</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<p class="muted" style="margin-top:10px;">
+    Measured on the held-out <strong>{{ evaluation.dataset | upper }}</strong> test split
+    ({{ "{:,}".format(evaluation.test_rows) }} samples), which no model saw during training.
+    "vs. baseline" compares against always guessing the majority class
+    ({{ (evaluation.models.ensemble.majority_baseline * 100) | round(1) }}%) — a model
+    that can't beat that number has learned nothing.
+</p>
+{% else %}
+<div class="panel">
+    <p class="muted">No evaluation report found. Run
+    <code>python src/train_meta.py --dataset {{ metadata.dataset }}</code> to generate one.</p>
+</div>
+{% endif %}
+
+<h2 class="section-title">How the ensemble is built</h2>
+<div class="panel">
+    <ol class="protocol">
+        <li><strong>Base models</strong> train on the training split.</li>
+        <li><strong>The meta-classifier</strong> is fitted on the validation split, using
+            the three models' output probabilities as its only inputs.</li>
+        <li><strong>Every number above</strong> is measured on the test split.</li>
+    </ol>
+    <p class="muted" style="margin-top:14px;">
+        The meta-classifier is deliberately fitted on data the base models never
+        trained on. Fitting it on the training split instead would let it learn from
+        their overconfidence on rows they had memorised, and the ensemble would look
+        better than it is.
+    </p>
+</div>
+
+<h2 class="section-title">The three signals</h2>
+<div class="panel">
+    <dl class="signals">
+        <dt>Transformer (DistilBERT)</dt>
+        <dd>Fine-tuned on the training split, reading up to 256 tokens. Catches
+            phrasing and semantics that statistics miss, but degrades on text
+            unlike anything it trained on.</dd>
+
+        <dt>Stylometric (logistic regression)</dt>
+        <dd>Five features: average sentence length, sentence-length variance,
+            average word length, vocabulary richness, punctuation density.
+            Cheap, interpretable, and surprisingly hard to beat — but it needs
+            enough text for the statistics to stabilise.</dd>
+
+        <dt>Visual CNN</dt>
+        <dd>Renders each text as a 224×224 heatmap — one row per sentence, one
+            column per measurement — and classifies the resulting texture. It sees
+            structural rhythm rather than words.</dd>
+    </dl>
+</div>
+
+<h2 class="section-title">Known limitations</h2>
+<div class="panel">
+    <ul class="limits">
+        <li><strong>Short text is unreliable.</strong> Below roughly 50 words the
+            stylometric features are dominated by noise, and the ensemble leans
+            almost entirely on the transformer.</li>
+        <li><strong>Domain shift hurts.</strong> Accuracy is measured on the same
+            corpus the models trained on. Text from a very different domain — or a
+            newer generator — should be expected to score worse.</li>
+        <li><strong>Editing defeats it.</strong> Generated text that a human has
+            revised carries a mix of both signatures, which is exactly the region
+            where the models disagree most.</li>
+        <li><strong>This is not proof of authorship.</strong> Every output is a
+            probability. Do not use it to accuse anyone of anything.</li>
+    </ul>
+</div>
+
+<h2 class="section-title">A note on the earlier version</h2>
+<div class="panel">
+    <p class="muted">
+        An earlier iteration of this project reported far higher numbers. Those
+        models turned out to be broken: the transformer's weights had barely moved
+        from their pretrained initialisation, and the CNN's image encoding
+        normalised each text independently, discarding the absolute scale that
+        carried the signal — it scored below the majority-class baseline. Both were
+        rebuilt, and every figure on this page comes from the current models on a
+        held-out split. The failure is documented in the repository rather than
+        quietly deleted, because how it was caught is the more useful part.
+    </p>
+</div>
+
+<style>
+    .row-highlight td { background: rgba(144,133,233,0.09); font-weight: 620; color: var(--ink); }
+    .delta { color: var(--good); }
+    .protocol { padding-left: 20px; display: grid; gap: 9px; font-size: 0.89rem; }
+    .protocol strong { color: var(--ink); }
+    .signals dt {
+        color: var(--ink); font-weight: 620; font-size: 0.9rem; margin-top: 16px;
+    }
+    .signals dt:first-child { margin-top: 0; }
+    .signals dd { font-size: 0.86rem; color: var(--ink-2); margin-top: 4px; line-height: 1.6; }
+    .limits { padding-left: 20px; display: grid; gap: 10px; font-size: 0.87rem; }
+    .limits strong { color: var(--ink); }
+    code {
+        background: var(--surface-2); padding: 2px 6px; border-radius: 4px;
+        font-size: 0.85em; color: var(--ink-2);
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "assistant-explainer",
+    "label": "Assistant-style explainer",
+    "hint": "Uniform sentence length, hedged transitions, tidy structure.",
+    "text": "Photosynthesis is a fundamental biological process that allows plants to convert light energy into chemical energy. It is important to note that this process occurs primarily in the chloroplasts, which contain a green pigment called chlorophyll. There are two main stages involved: the light-dependent reactions and the Calvin cycle. During the light-dependent reactions, water molecules are split, releasing oxygen as a byproduct. Subsequently, the Calvin cycle uses the resulting energy carriers to fix carbon dioxide into glucose. Overall, photosynthesis plays a crucial role in sustaining life on Earth by producing both oxygen and the organic compounds that form the base of most food chains."
+  },
+  {
+    "id": "casual-register",
+    "label": "Casual forum register",
+    "hint": "Lowercase, asides, ragged rhythm — style alone does not settle it.",
+    "text": "honestly I tried this for about three weeks and it just didn't stick. the first few days were fine — I was motivated, I had my little spreadsheet, all that. then work got busy and the whole thing fell apart within like two days. I think the problem is that it assumes you have a stable schedule?? which, if you work shifts, you really don't. my coworker swears by it but she's also the kind of person who meal preps on sundays so. anyway if anyone has something that works for irregular hours I'm all ears, genuinely running out of ideas here."
+  },
+  {
+    "id": "dense-technical",
+    "label": "Dense technical prose",
+    "hint": "Specific, idiosyncratic detail — a harder case for every model.",
+    "text": "The tricky part wasn't the parser, it was cache invalidation across the two stores. We had a write-through cache in front of Postgres and a separate read replica that the analytics job hammered every fifteen minutes. Under load the replica lag would spike to eight or nine seconds, and any request that landed in that window would read a stale row, write a derived value based on it, and then the write-through would happily persist the wrong number. Took us two weeks to find because it only reproduced under concurrent load, and our staging environment ran a single instance."
+  },
+  {
+    "id": "short-listy",
+    "label": "Short, listy reply",
+    "hint": "Too short for stylometry — watch the models split.",
+    "text": "Certainly! Here are a few key considerations to keep in mind. First, ensure that your data is properly validated before processing. Second, consider implementing appropriate error handling. Finally, remember to document your approach thoroughly."
+  }
+]

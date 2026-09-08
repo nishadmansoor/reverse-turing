@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} — Reverse Turing Test{% endblock %}
+{% block tagline %}Something went sideways.{% endblock %}
+
+{% block content %}
+<div class="panel error-panel">
+    <div class="error-code">{{ code }}</div>
+    <p class="error-message">{{ message }}</p>
+    <a href="/" class="btn btn-quiet">Back to the classifier</a>
+</div>
+
+<style>
+    .error-panel { text-align: center; padding: 48px 24px; }
+    .error-code {
+        font-size: 3rem; font-weight: 750; color: var(--ink-muted);
+        line-height: 1; margin-bottom: 10px;
+    }
+    .error-message { color: var(--ink-2); margin-bottom: 22px; font-size: 0.95rem; }
+    .error-panel .btn { text-decoration: none; }
+</style>
+{% endblock %}
+
+{% block footnote %}
+<a href="/">Home</a> · <a href="/explore">Dataset Explorer</a> · <a href="/about">Method &amp; Results</a>
+{% endblock %}
