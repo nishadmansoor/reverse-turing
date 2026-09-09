@@ -1,15 +1,20 @@
 # Runtime dependencies — what the deployed app actually imports.
 # Training and data-prep dependencies live in requirements-dev.txt.
 #
-# Install CPU-only torch for deployment:
-#   pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+# Note there is no torch here. The app serves int8 ONNX graphs through
+# onnxruntime (~50 MB) instead of the torch runtime (~800 MB unpacked), which
+# is what lets the container fit a free hosting tier. torch is still required
+# to train and to export the graphs — see requirements-dev.txt.
 
 # Web
 flask>=3.0.0
 gunicorn>=21.2.0
 
 # Inference
-torch>=2.0.0
+onnxruntime>=1.17.0
+
+# Tokenizer only — transformers is pure Python here and pulls in `tokenizers`,
+# not a deep-learning backend.
 transformers>=4.30.0
 tokenizers>=0.13.0
 

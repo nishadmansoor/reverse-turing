@@ -1,8 +1,15 @@
-# Training, data preparation, and evaluation dependencies.
-# Install these to retrain models or rebuild artifacts; the deployed app
-# does not need them.
+# Training, data preparation, evaluation, and model export.
+# Install these to retrain models, rebuild artifacts, or regenerate the
+# quantized ONNX graphs. The deployed app needs none of them.
 
 -r requirements.txt
+
+# Training backend
+torch>=2.0.0
+
+# ONNX export + quantization (src/quantize.py)
+onnx>=1.15.0
+onnxscript>=0.1.0
 
 # Data pipeline
 pandas>=2.0.0

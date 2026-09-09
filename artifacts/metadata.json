@@ -1,6 +1,7 @@
 {
-  "built_at": "2026-09-08T00:42:47+00:00",
+  "built_at": "2026-09-09T23:24:17+00:00",
   "dataset": "raid",
+  "backend": "onnx",
   "train_rows": 111006,
   "test_rows": 31221,
   "explorer_rows": 5000,
@@ -34,8 +35,8 @@
   "stylometric_train_accuracy": 0.7699133380177648,
   "explorer_sample_accuracy": {
     "stylometric": 0.7746,
-    "bert": 0.988,
-    "cnn": 0.9774,
-    "ensemble": 0.9922
+    "bert": 0.9878,
+    "cnn": 0.9778,
+    "ensemble": 0.9924
   }
 }

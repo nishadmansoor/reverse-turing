@@ -1,5 +1,10 @@
+# fp32 training outputs
 models/bert_classifier/** filter=lfs diff=lfs merge=lfs -text
 models/cnn_classifier.pt filter=lfs diff=lfs merge=lfs -text
 
-# Small pickles (a few hundred bytes each) — plain git, not LFS.
-# artifacts/explorer.json is ~1 MB and also fine as a normal blob.
+# int8 graphs the deployed app serves. Binary and re-exported whenever the
+# models are retrained, so they belong in LFS rather than git history.
+models/onnx/*.onnx filter=lfs diff=lfs merge=lfs -text
+
+# Small pickles (a few hundred bytes each) and the tokenizer JSON stay in
+# plain git. artifacts/explorer.json is ~1 MB and is also fine as a normal blob.

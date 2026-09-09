@@ -1,7 +1,18 @@
 # Keep the build context small. data/ alone is ~7.9 GB and none of it is
 # needed at runtime — the app serves prebuilt artifacts, not raw datasets.
 data/
-results/
+
+# Exclude results wholesale, except the one report the Method & Results page
+# reads at runtime.
+results/*
+!results/evaluation_raid_int8.json
+
+# fp32 PyTorch weights are training outputs. The app serves the int8 ONNX
+# graphs in models/onnx/, so shipping these would quadruple the image.
+models/bert_classifier/
+models/cnn_classifier.pt
+models/meta_classifier.pkl
+
 notebooks/
 .git/
 .venv/
@@ -14,14 +25,13 @@ __pycache__/
 .vscode/
 .idea/
 *.log
+deploy/
 
 # Training-only code — not imported by the app.
 src/pipeline.py
 src/raid_pipeline.py
 src/retrain.py
 src/train_meta.py
-src/bert.py
-src/opencv.py
-src/stylometric.py
+src/build_artifacts.py
+src/quantize.py
 src/evaluation.py
-src/visualizations.py

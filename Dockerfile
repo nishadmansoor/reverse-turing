@@ -1,23 +1,26 @@
 # Reverse Turing Test — container image
 #
-# Targets Hugging Face Spaces (Docker SDK), but is a plain container and runs
-# anywhere: `docker run -p 7860:7860 <image>`.
+# A plain container: `docker run -p 7860:7860 <image>`. Runs on any host that
+# gives it ~512 MB.
 #
-# Two deliberate choices keep this deployable:
-#   * CPU-only torch. The default wheel pulls CUDA libraries that add well over
-#     a gigabyte and are dead weight on a CPU Space.
-#   * The app loads prebuilt artifacts and never touches the raw dataset, so no
-#     CSVs ship in the image. Run src/build_artifacts.py before building.
+# Three choices keep it small enough for a free tier:
+#   * int8 ONNX graphs (71 MB) instead of fp32 PyTorch weights (293 MB)
+#   * onnxruntime instead of torch — no CUDA libraries, no ~800 MB runtime
+#   * prebuilt artifacts, so no dataset ships in the image
+#
+# Run `python src/quantize.py` and `python src/build_artifacts.py` before
+# building.
 
 FROM python:3.11-slim
 
-# libgomp1 is required by opencv/torch; the rest of the usual OpenCV system
-# deps are unnecessary with the headless wheel.
+# libgomp1 is onnxruntime's OpenMP dependency; opencv's headless wheel needs
+# nothing further.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Spaces runs containers as uid 1000; matching it keeps the caches writable.
+# Many hosts (including HF Spaces) run containers as uid 1000; matching it
+# keeps the caches writable.
 RUN useradd -m -u 1000 appuser
 USER appuser
 ENV HOME=/home/appuser \
@@ -25,34 +28,41 @@ ENV HOME=/home/appuser \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/home/appuser/.cache/huggingface \
-    TRANSFORMERS_OFFLINE=1
+    TRANSFORMERS_OFFLINE=1 \
+    OMP_NUM_THREADS=2
 
 WORKDIR /app
 
-# Install dependencies first so layer caching survives source edits.
+# Dependencies first so layer caching survives source edits.
 COPY --chown=appuser:appuser requirements.txt .
-RUN pip install --no-cache-dir --user \
-        --extra-index-url https://download.pytorch.org/whl/cpu \
-        -r requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Model weights and artifacts change less often than templates.
-COPY --chown=appuser:appuser models/ ./models/
+# Only the artifacts the app actually loads. The fp32 PyTorch weights in
+# models/bert_classifier/ and models/cnn_classifier.pt are training outputs and
+# are deliberately excluded — copying them would quadruple the image.
+COPY --chown=appuser:appuser models/onnx/ ./models/onnx/
+COPY --chown=appuser:appuser models/stylometric_classifier.pkl \
+     models/meta_classifier_int8.pkl ./models/
 COPY --chown=appuser:appuser artifacts/ ./artifacts/
+COPY --chown=appuser:appuser results/evaluation_raid_int8.json ./results/
 COPY --chown=appuser:appuser src/features.py src/model_defs.py ./src/
 COPY --chown=appuser:appuser app/ ./app/
 
 EXPOSE 7860
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')"
 
-# One worker with threads: each worker would otherwise hold its own ~270 MB
-# copy of the transformer. Inference releases the GIL, so threads serve
-# concurrent requests fine. --preload loads the models before forking.
-CMD ["gunicorn", "app.app:app", \
-     "--bind", "0.0.0.0:7860", \
-     "--workers", "1", \
-     "--threads", "4", \
-     "--timeout", "120", \
-     "--preload", \
-     "--access-logfile", "-"]
+# Shell form so $PORT expands: hosts inject their own port (Render, Cloud Run,
+# Fly), and 7860 is only the local default.
+#
+# One worker with threads: a second worker would duplicate the loaded graphs in
+# memory. onnxruntime releases the GIL during inference, so threads serve
+# concurrent requests fine. --preload loads everything before forking.
+CMD gunicorn app.app:app \
+      --bind "0.0.0.0:${PORT:-7860}" \
+      --workers 1 \
+      --threads 4 \
+      --timeout 120 \
+      --preload \
+      --access-logfile -

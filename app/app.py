@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import torch
+import onnxruntime as ort
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
 PROJECT_ROOT = Path(__file__).parent.resolve().parent
@@ -32,7 +32,6 @@ from src.features import (  # noqa: E402
     meta_features,
     text_to_heatmap,
 )
-from src.model_defs import CNN  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -42,6 +41,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-producti
 
 ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
 MODELS_DIR = PROJECT_ROOT / "models"
+ONNX_DIR = MODELS_DIR / "onnx"
 
 MIN_TEXT_LENGTH = 20
 MAX_TEXT_LENGTH = 20_000
@@ -84,45 +84,49 @@ def load_runtime():
     explorer = _load_json(ARTIFACTS_DIR / "explorer.json", build_hint)
     pca = _load_pickle(ARTIFACTS_DIR / "pca.pkl", build_hint)
     stylo_model = _load_pickle(MODELS_DIR / "stylometric_classifier.pkl", build_hint)
+    # The stacker must match the backend it was fitted against — int8
+    # probabilities differ slightly from fp32, so the ensemble weights do too.
     meta_model = _load_pickle(
-        MODELS_DIR / "meta_classifier.pkl",
-        "restore models/meta_classifier.pkl (see src/train_meta.py)",
+        MODELS_DIR / "meta_classifier_int8.pkl",
+        "python src/train_meta.py --dataset raid --backend onnx",
     )
 
-    logger.info("Loading CNN...")
-    cnn_model = CNN()
-    cnn_model.load_state_dict(torch.load(
-        _require(MODELS_DIR / "cnn_classifier.pt", "python src/retrain.py --skip-bert --skip-stylo"),
-        map_location="cpu", weights_only=True,
-    ))
-    cnn_model.eval()
+    quantize_hint = "python src/quantize.py"
+    logger.info("Loading quantized CNN...")
+    cnn_session = ort.InferenceSession(
+        str(_require(ONNX_DIR / "cnn_int8.onnx", quantize_hint)),
+        providers=["CPUExecutionProvider"],
+    )
 
-    logger.info("Loading transformer...")
-    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    logger.info("Loading quantized transformer...")
+    from transformers import AutoTokenizer
 
-    bert_dir = MODELS_DIR / "bert_classifier"
-    if not (bert_dir / "model.safetensors").exists() and not (bert_dir / "pytorch_model.bin").exists():
-        raise ArtifactsMissing(
-            f"Missing transformer weights in {bert_dir.relative_to(PROJECT_ROOT)}.\n"
-            "  Fix: python src/retrain.py  (or pull them via git-lfs)"
-        )
-    tokenizer = AutoTokenizer.from_pretrained(str(bert_dir))
-    bert_model = AutoModelForSequenceClassification.from_pretrained(str(bert_dir))
-    bert_model.eval()
+    tokenizer = AutoTokenizer.from_pretrained(str(_require(
+        ONNX_DIR / "tokenizer" / "tokenizer_config.json", quantize_hint).parent))
+    bert_session = ort.InferenceSession(
+        str(_require(ONNX_DIR / "transformer_int8.onnx", quantize_hint)),
+        providers=["CPUExecutionProvider"],
+    )
 
     averages = metadata["feature_averages"]
     examples = _load_json(Path(__file__).parent / "examples.json", "restore app/examples.json")
 
     # Optional: the held-out evaluation report powers the Method & Results page.
     # Absent on a fresh build, so the page degrades to a "run this" hint.
+    # Prefer the int8 report: it measures the models this app actually serves.
+    # Falls back to the fp32 report so a torch-based local run still shows data.
     evaluation = None
-    eval_path = PROJECT_ROOT / "results" / f"evaluation_{metadata.get('dataset')}.json"
-    if eval_path.exists():
-        with open(eval_path) as f:
-            evaluation = json.load(f)
-        logger.info("Loaded evaluation report: %s", eval_path.name)
+    results_dir = PROJECT_ROOT / "results"
+    dataset = metadata.get("dataset")
+    for candidate in (results_dir / f"evaluation_{dataset}_int8.json",
+                      results_dir / f"evaluation_{dataset}.json"):
+        if candidate.exists():
+            with open(candidate) as f:
+                evaluation = json.load(f)
+            logger.info("Loaded evaluation report: %s", candidate.name)
+            break
     else:
-        logger.warning("No evaluation report at %s", eval_path.relative_to(PROJECT_ROOT))
+        logger.warning("No evaluation report found in %s", results_dir.relative_to(PROJECT_ROOT))
 
     logger.info("Ready — dataset=%s, explorer=%d rows, built %s",
                 metadata.get("dataset"), metadata.get("explorer_rows"),
@@ -134,9 +138,9 @@ def load_runtime():
         "pca": pca,
         "stylo_model": stylo_model,
         "meta_model": meta_model,
-        "cnn_model": cnn_model,
+        "cnn_session": cnn_session,
         "tokenizer": tokenizer,
-        "bert_model": bert_model,
+        "bert_session": bert_session,
         "human_avg": np.array(averages["human"]),
         "ai_avg": np.array(averages["ai"]),
         "examples": examples,
@@ -151,16 +155,25 @@ models = load_runtime()
 # Inference
 # ---------------------------------------------------------------------------
 
+def _softmax(logits: np.ndarray) -> np.ndarray:
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    exp = np.exp(shifted)
+    return exp / exp.sum(axis=1, keepdims=True)
+
+
 def _predict_bert(text: str) -> tuple:
     tokens = models["tokenizer"](
         text, max_length=BERT_MAX_TOKENS, padding="max_length",
-        truncation=True, return_tensors="pt",
+        truncation=True, return_tensors="np",
     )
-    with torch.no_grad():
-        probs = torch.softmax(models["bert_model"](**tokens).logits, dim=1)
-    ai_prob = float(probs[0][1])
+    logits = models["bert_session"].run(None, {
+        "input_ids": tokens["input_ids"].astype(np.int64),
+        "attention_mask": tokens["attention_mask"].astype(np.int64),
+    })[0]
+    probs = _softmax(logits)[0]
+    ai_prob = float(probs[1])
     pred = int(ai_prob >= 0.5)
-    return pred, ai_prob, float(probs[0][pred])
+    return pred, ai_prob, float(probs[pred])
 
 
 def _predict_stylo(features: list) -> tuple:
@@ -173,12 +186,12 @@ def _predict_stylo(features: list) -> tuple:
 
 def _predict_cnn(text: str) -> tuple:
     heatmap = text_to_heatmap(text)
-    tensor = torch.tensor(heatmap, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0) / 255.0
-    with torch.no_grad():
-        probs = torch.softmax(models["cnn_model"](tensor), dim=1)
-    ai_prob = float(probs[0][1])
+    image = heatmap.astype(np.float32).transpose(2, 0, 1)[np.newaxis, ...] / 255.0
+    logits = models["cnn_session"].run(None, {"images": image})[0]
+    probs = _softmax(logits)[0]
+    ai_prob = float(probs[1])
     pred = int(ai_prob >= 0.5)
-    return pred, ai_prob, float(probs[0][pred])
+    return pred, ai_prob, float(probs[pred])
 
 
 def _ensemble(text, bert_ai_prob, stylo_ai_prob, cv_ai_prob) -> tuple:
@@ -186,11 +199,10 @@ def _ensemble(text, bert_ai_prob, stylo_ai_prob, cv_ai_prob) -> tuple:
 
     The meta-classifier is fitted on the validation split (see
     src/train_meta.py), so it learns how much to trust each base model from
-    data the bases never trained on. An earlier version applied a hardcoded
-    override — force "AI" whenever stylometry was >=0.7 confident and the
-    transformer disagreed — to patch around a transformer that turned out to
-    be barely trained. With the bases retrained and the stacker fitted
-    honestly, that heuristic is no longer needed.
+    data the bases never trained on. That learned weighting replaces an earlier
+    hardcoded override, which forced "AI" whenever stylometry was >=0.7
+    confident and the transformer disagreed; a stacker fitted on held-out data
+    handles that disagreement on its own.
 
     Returns (verdict, confidence_pct, ai_probability).
     """

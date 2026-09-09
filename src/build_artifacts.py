@@ -126,6 +126,54 @@ def build_stylometric(train_df: pd.DataFrame) -> tuple:
 # Batched inference over the explorer sample
 # ---------------------------------------------------------------------------
 
+def _softmax_ai(logits: np.ndarray) -> np.ndarray:
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    exp = np.exp(shifted)
+    return (exp / exp.sum(axis=1, keepdims=True))[:, 1]
+
+
+def _bert_ai_probs_onnx(texts) -> np.ndarray:
+    """P(AI) from the quantized int8 graph the app actually serves."""
+    import onnxruntime as ort
+    from transformers import AutoTokenizer
+
+    onnx_dir = MODELS_DIR / "onnx"
+    tokenizer = AutoTokenizer.from_pretrained(str(onnx_dir / "tokenizer"))
+    sess = ort.InferenceSession(str(onnx_dir / "transformer_int8.onnx"),
+                                providers=["CPUExecutionProvider"])
+    logger.info("Running int8 transformer over %d explorer rows...", len(texts))
+
+    out = []
+    for start in range(0, len(texts), BERT_BATCH):
+        batch = list(texts[start:start + BERT_BATCH])
+        tokens = tokenizer(batch, max_length=256, padding="max_length",
+                           truncation=True, return_tensors="np")
+        logits = sess.run(None, {
+            "input_ids": tokens["input_ids"].astype(np.int64),
+            "attention_mask": tokens["attention_mask"].astype(np.int64),
+        })[0]
+        out.extend(_softmax_ai(logits).tolist())
+        if start % (BERT_BATCH * 20) == 0:
+            logger.info("  %d/%d", start, len(texts))
+    return np.array(out)
+
+
+def _cnn_ai_probs_onnx(texts) -> np.ndarray:
+    """P(AI) from the quantized CNN graph."""
+    import onnxruntime as ort
+
+    sess = ort.InferenceSession(str(MODELS_DIR / "onnx" / "cnn_int8.onnx"),
+                                providers=["CPUExecutionProvider"])
+    logger.info("Running int8 CNN over %d explorer rows...", len(texts))
+
+    out = []
+    for start in range(0, len(texts), CNN_BATCH):
+        batch = [text_to_heatmap(t) for t in texts[start:start + CNN_BATCH]]
+        images = np.stack(batch).astype(np.float32).transpose(0, 3, 1, 2) / 255.0
+        out.extend(_softmax_ai(sess.run(None, {"images": images})[0]).tolist())
+    return np.array(out)
+
+
 def _bert_ai_probs(texts, bert_dir: Path) -> np.ndarray:
     """P(AI) for each text from the fine-tuned transformer."""
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -179,7 +227,7 @@ def _cnn_ai_probs(texts) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def build_explorer(test_df: pd.DataFrame, stylo_model, size: int, seed: int,
-                   include_bert: bool, include_cnn: bool) -> tuple:
+                   include_bert: bool, include_cnn: bool, backend: str = "onnx") -> tuple:
     """Build the PCA scatter payload for the Dataset Explorer.
 
     Predictions are computed from the models as they exist right now, over the
@@ -225,8 +273,9 @@ def build_explorer(test_df: pd.DataFrame, stylo_model, size: int, seed: int,
     bert_dir = MODELS_DIR / "bert_classifier"
     has_bert = (bert_dir / "model.safetensors").exists() or (bert_dir / "pytorch_model.bin").exists()
     bert_ai = None
-    if include_bert and has_bert:
-        bert_ai = _bert_ai_probs(texts, bert_dir)
+    if include_bert and (backend == "onnx" or has_bert):
+        bert_ai = (_bert_ai_probs_onnx(texts) if backend == "onnx"
+                   else _bert_ai_probs(texts, bert_dir))
         bert_pred = (bert_ai >= 0.5).astype(int)
         payload["bert_pred"] = [int(v) for v in bert_pred]
         accuracies["bert"] = float((bert_pred == truth).mean())
@@ -234,8 +283,9 @@ def build_explorer(test_df: pd.DataFrame, stylo_model, size: int, seed: int,
         logger.warning("Skipping transformer predictions for explorer")
 
     cnn_ai = None
-    if include_cnn and (MODELS_DIR / "cnn_classifier.pt").exists():
-        cnn_ai = _cnn_ai_probs(texts)
+    if include_cnn and (backend == "onnx" or (MODELS_DIR / "cnn_classifier.pt").exists()):
+        cnn_ai = (_cnn_ai_probs_onnx(texts) if backend == "onnx"
+                  else _cnn_ai_probs(texts))
         cnn_pred = (cnn_ai >= 0.5).astype(int)
         payload["cnn_pred"] = [int(v) for v in cnn_pred]
         accuracies["cnn"] = float((cnn_pred == truth).mean())
@@ -244,7 +294,8 @@ def build_explorer(test_df: pd.DataFrame, stylo_model, size: int, seed: int,
 
     # Ensemble over the same sample, so every figure on the explorer page is
     # measured on identical rows.
-    meta_path = MODELS_DIR / "meta_classifier.pkl"
+    meta_path = (MODELS_DIR / "meta_classifier_int8.pkl" if backend == "onnx"
+                 else MODELS_DIR / "meta_classifier.pkl")
     if bert_ai is not None and cnn_ai is not None and meta_path.exists():
         with open(meta_path, "rb") as f:
             meta_model = pickle.load(f)
@@ -292,6 +343,8 @@ def main():
                         help="Skip transformer inference for the explorer")
     parser.add_argument("--skip-cnn", action="store_true",
                         help="Skip CNN inference for the explorer")
+    parser.add_argument("--backend", default="onnx", choices=["onnx", "torch"],
+                        help="onnx (default) matches the models the app serves")
     args = parser.parse_args()
 
     train_path, test_path = _split_paths(args.dataset)
@@ -310,11 +363,13 @@ def main():
     pca, accuracies, explorer_n = build_explorer(
         test_df, stylo_model, args.explorer_size, args.seed,
         include_bert=not args.skip_bert, include_cnn=not args.skip_cnn,
+        backend=args.backend,
     )
 
     metadata = {
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "dataset": args.dataset,
+        "backend": args.backend,
         "train_rows": int(len(train_df)),
         "test_rows": int(len(test_df)),
         "explorer_rows": int(explorer_n),

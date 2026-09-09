@@ -53,10 +53,38 @@ command -v git-lfs >/dev/null || {
 SPACE_ID="$USERNAME/$SPACE_NAME"
 SPACE_URL="https://huggingface.co/spaces/$SPACE_ID"
 
-# --- 2. Create the Space (no-op if it exists) -------------------------------
-echo "==> Ensuring Space exists: $SPACE_ID"
-huggingface-cli repo create "$SPACE_NAME" --type space --space_sdk docker -y \
-    2>/dev/null || echo "    (already exists, continuing)"
+# --- 2. Verify the token can actually write ---------------------------------
+# A read-scoped token fails here rather than three steps later at `git push`,
+# where the error surfaces as a confusing "could not clone".
+echo "==> Checking credentials"
+python3 - "$SPACE_ID" <<'PY' || exit 1
+import sys
+from huggingface_hub import HfApi
+
+api = HfApi()
+try:
+    me = api.whoami()
+except Exception as exc:
+    sys.exit(f"    Not logged in ({exc.__class__.__name__}). Run: hf auth login")
+
+role = (me.get("auth") or {}).get("accessToken", {}).get("role")
+print(f"    user: {me.get('name')}  token role: {role or 'unknown'}")
+if role == "read":
+    sys.exit(
+        "    This token is READ-ONLY and cannot create or push to a Space.\n"
+        "    Create a write token at https://huggingface.co/settings/tokens\n"
+        "    then run: hf auth login"
+    )
+
+space_id = sys.argv[1]
+try:
+    api.space_info(space_id)
+    print(f"    Space exists: {space_id}")
+except Exception:
+    print(f"    Creating Space: {space_id}")
+    api.create_repo(space_id, repo_type="space", space_sdk="docker", exist_ok=True)
+    print("    created")
+PY
 
 # --- 3. Stage and push ------------------------------------------------------
 STAGING="$(mktemp -d)"

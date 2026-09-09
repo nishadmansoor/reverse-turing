@@ -79,7 +79,17 @@ def get_device() -> torch.device:
 # Base model probabilities
 # ---------------------------------------------------------------------------
 
-def bert_ai_probs(texts, device) -> np.ndarray:
+def _softmax_ai(logits: np.ndarray) -> np.ndarray:
+    """P(AI) column from raw logits."""
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    exp = np.exp(shifted)
+    return (exp / exp.sum(axis=1, keepdims=True))[:, 1]
+
+
+def bert_ai_probs(texts, device, backend="torch") -> np.ndarray:
+    if backend == "onnx":
+        return _bert_ai_probs_onnx(texts)
+
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
     bert_dir = MODELS_DIR / "bert_classifier"
@@ -101,7 +111,35 @@ def bert_ai_probs(texts, device) -> np.ndarray:
     return np.array(out)
 
 
-def cnn_ai_probs(texts, device) -> np.ndarray:
+def _bert_ai_probs_onnx(texts) -> np.ndarray:
+    import onnxruntime as ort
+    from transformers import AutoTokenizer
+
+    onnx_dir = MODELS_DIR / "onnx"
+    tokenizer = AutoTokenizer.from_pretrained(str(onnx_dir / "tokenizer"))
+    sess = ort.InferenceSession(str(onnx_dir / "transformer_int8.onnx"),
+                                providers=["CPUExecutionProvider"])
+
+    out = []
+    for start in range(0, len(texts), BERT_BATCH):
+        batch = list(texts[start:start + BERT_BATCH])
+        tokens = tokenizer(batch, max_length=256, padding="max_length",
+                           truncation=True, return_tensors="np")
+        logits = sess.run(None, {
+            "input_ids": tokens["input_ids"].astype(np.int64),
+            "attention_mask": tokens["attention_mask"].astype(np.int64),
+        })[0]
+        out.extend(_softmax_ai(logits).tolist())
+        if (start // BERT_BATCH) % 25 == 0:
+            logger.info("    transformer(int8) %d/%d", start, len(texts))
+
+    return np.array(out)
+
+
+def cnn_ai_probs(texts, device, backend="torch") -> np.ndarray:
+    if backend == "onnx":
+        return _cnn_ai_probs_onnx(texts)
+
     model = CNN()
     model.load_state_dict(torch.load(MODELS_DIR / "cnn_classifier.pt",
                                      map_location="cpu", weights_only=True))
@@ -118,23 +156,38 @@ def cnn_ai_probs(texts, device) -> np.ndarray:
     return np.array(out)
 
 
+def _cnn_ai_probs_onnx(texts) -> np.ndarray:
+    import onnxruntime as ort
+
+    sess = ort.InferenceSession(str(MODELS_DIR / "onnx" / "cnn_int8.onnx"),
+                                providers=["CPUExecutionProvider"])
+    out = []
+    for start in range(0, len(texts), CNN_BATCH):
+        batch = [text_to_heatmap(t) for t in texts[start:start + CNN_BATCH]]
+        images = np.stack(batch).astype(np.float32).transpose(0, 3, 1, 2) / 255.0
+        logits = sess.run(None, {"images": images})[0]
+        out.extend(_softmax_ai(logits).tolist())
+
+    return np.array(out)
+
+
 def stylo_ai_probs(texts) -> np.ndarray:
     with open(MODELS_DIR / "stylometric_classifier.pkl", "rb") as f:
         model = pickle.load(f)
     return model.predict_proba(extract_features_batch(texts))[:, 1]
 
 
-def build_meta_frame(df: pd.DataFrame, device, label: str) -> pd.DataFrame:
+def build_meta_frame(df: pd.DataFrame, device, label: str, backend="torch") -> pd.DataFrame:
     """Run all three base models over a split and assemble meta-features."""
     texts = df["text"].tolist()
-    logger.info("  [%s] %d rows", label, len(texts))
+    logger.info("  [%s] %d rows (backend=%s)", label, len(texts), backend)
 
     logger.info("  [%s] stylometric...", label)
     stylo = stylo_ai_probs(texts)
     logger.info("  [%s] cnn...", label)
-    cnn = cnn_ai_probs(texts, device)
+    cnn = cnn_ai_probs(texts, device, backend)
     logger.info("  [%s] transformer...", label)
-    bert = bert_ai_probs(texts, device)
+    bert = bert_ai_probs(texts, device, backend)
 
     frame = pd.DataFrame({
         "bert_ai_prob": bert,
@@ -173,7 +226,13 @@ def main():
     parser.add_argument("--test-sample", type=int, default=None,
                         help="Subsample the test split used for reporting")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--backend", default="torch", choices=["torch", "onnx"],
+                        help="onnx uses the quantized int8 graphs in models/onnx/")
     args = parser.parse_args()
+
+    # Keep the two backends' outputs side by side so the quantization delta is
+    # measurable rather than assumed.
+    suffix = "" if args.backend == "torch" else "_int8"
 
     prefix = "" if args.dataset == "hc3" else f"{args.dataset}_"
     val_path = DATA_DIR / f"{prefix}val.csv"
@@ -195,12 +254,12 @@ def main():
     test_df = test_df.reset_index(drop=True)
 
     logger.info("Building meta-features...")
-    val_meta = build_meta_frame(val_df, device, "val")
-    test_meta = build_meta_frame(test_df, device, "test")
+    val_meta = build_meta_frame(val_df, device, "val", args.backend)
+    test_meta = build_meta_frame(test_df, device, "test", args.backend)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    val_meta.to_csv(RESULTS_DIR / f"meta_features_val_{args.dataset}.csv", index=False)
-    test_meta.to_csv(RESULTS_DIR / f"meta_features_test_{args.dataset}.csv", index=False)
+    val_meta.to_csv(RESULTS_DIR / f"meta_features_val_{args.dataset}{suffix}.csv", index=False)
+    test_meta.to_csv(RESULTS_DIR / f"meta_features_test_{args.dataset}{suffix}.csv", index=False)
 
     # --- Fit the stacker on val ---
     X_val = val_meta[META_FEATURE_NAMES].to_numpy()
@@ -211,15 +270,17 @@ def main():
     logger.info("  coefficients: %s",
                 {n: round(float(c), 4) for n, c in zip(META_FEATURE_NAMES, meta.coef_[0])})
 
-    with open(MODELS_DIR / "meta_classifier.pkl", "wb") as f:
+    meta_path = MODELS_DIR / f"meta_classifier{suffix}.pkl"
+    with open(meta_path, "wb") as f:
         pickle.dump(meta, f)
-    logger.info("  saved models/meta_classifier.pkl")
+    logger.info("  saved %s", meta_path.relative_to(PROJECT_ROOT))
 
     # --- Evaluate everything on test ---
     y_test = test_meta["label"].to_numpy()
     report = {
         "evaluated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "dataset": args.dataset,
+        "backend": args.backend,
         "val_rows_for_stacker": int(len(X_val)),
         "test_rows": int(len(y_test)),
         "meta_coefficients": {n: float(c) for n, c in zip(META_FEATURE_NAMES, meta.coef_[0])},
@@ -235,7 +296,7 @@ def main():
     ensemble_prob = meta.predict_proba(test_meta[META_FEATURE_NAMES].to_numpy())[:, 1]
     report["models"]["ensemble"] = score(y_test, (ensemble_prob >= 0.5).astype(int), ensemble_prob)
 
-    report_path = RESULTS_DIR / f"evaluation_{args.dataset}.json"
+    report_path = RESULTS_DIR / f"evaluation_{args.dataset}{suffix}.json"
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
 

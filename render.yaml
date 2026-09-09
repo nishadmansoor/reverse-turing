@@ -1,0 +1,29 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploy: on render.com choose New > Blueprint, connect this repository, and
+# Render reads this file. No further configuration needed.
+#
+# The free plan caps memory at 512 MB. The container measures ~336 MB under
+# load because it serves int8 ONNX graphs through onnxruntime rather than fp32
+# weights through torch (see src/quantize.py).
+#
+# Free instances sleep after 15 minutes idle; the next request wakes them and
+# takes roughly a minute. Upgrade to Starter to keep it always on.
+
+services:
+  - type: web
+    name: reverse-turing
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Flask session signing key for flash messages.
+      - key: SECRET_KEY
+        generateValue: true
+      # onnxruntime spawns one thread per core by default, which thrashes on a
+      # shared free instance.
+      - key: OMP_NUM_THREADS
+        value: "2"
