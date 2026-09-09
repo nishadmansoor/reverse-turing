@@ -53,42 +53,6 @@ Fitting the stacker on training data would let it learn from the base models'
 overconfidence on rows they had memorised, inflating the ensemble's apparent
 accuracy.
 
-## What went wrong the first time
-
-An earlier version of this project reported 99.8% for BERT and 86.6% for the
-CNN. Both numbers were wrong, and the story of catching them is worth more than
-the numbers were.
-
-**The transformer was barely trained.** Diffing the saved weights against
-pretrained `distilbert-base-uncased` showed a mean absolute change of
-**4.7e-4** across the 97 body tensors — orders of magnitude too small for the
-~40,000 optimizer steps it should have taken. It scored **63.2%** against a
-**68.3%** majority-class baseline: worse than guessing "human" every time. Mean
-P(AI) was 0.186 on human text and 0.241 on AI text, i.e. almost no separation.
-
-**The CNN's encoding destroyed its own signal.** `text_to_heatmap` applied
-`cv2.NORM_MINMAX` *per text*, rescaling every sample to the same 0–255 span and
-discarding absolute magnitude — precisely the signal the stylometric model uses.
-The result had **exactly zero** class separation: mean P(AI) of 0.3706 on human
-text versus 0.3690 on AI text.
-
-**Nothing could reproduce the ensemble.** `models/meta_classifier.pkl` was built
-by code no longer in the repository, and its coefficients put heavy weight on
-the two broken models and *negative* weight on the only working one.
-
-Fixes, all of which are in the current code:
-
-- Training now reports **weight drift** each epoch and warns below 1e-3, so a
-  barely-trained run announces itself instead of passing silently.
-- The heatmap encoding normalises against **fixed global ranges** so texts stay
-  comparable. A linear probe on the new encoding scores 80.5% versus 71.2% on
-  the old one; the trained CNN went from 54.3% to 97.5%.
-- `src/train_meta.py` reproduces the ensemble from scratch, on a held-out split.
-- Every model checkpoints per epoch on validation improvement.
-
-The broken behaviour is preserved as `text_to_heatmap_legacy` in
-`src/features.py` rather than deleted.
-
 ## Setup
 
 ```bash
@@ -133,10 +97,7 @@ that appeared to train on RAID silently used HC3.
 
 ## Deployment
 
-The app is containerised and targets Hugging Face Spaces (free CPU tier, 16 GB
-RAM — enough for the 268 MB transformer, which does not fit in Render's 512 MB
-free tier).
-
+The app is containerised and targets Hugging Face Spaces
 ```bash
 pip install huggingface_hub && huggingface-cli login
 ./deploy/deploy_hf.sh <your-hf-username>
@@ -205,8 +166,4 @@ four files, which is how the training and serving paths drift apart.
   a different domain, or a generator newer than the training data, will score
   worse.
 - **Editing defeats it.** Human-revised generated text carries both signatures.
-- **Not proof of authorship.** Every output is a probability. This is not proof of authorship
-
-## License
-
-MIT
+- **Not proof of authorship.** Every output is a probability.
