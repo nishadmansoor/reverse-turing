@@ -14,20 +14,23 @@
     </div>
 </form>
 
-<h2 class="section-title">Or try a sample</h2>
+<h2 class="section-title">Or try a labelled sample</h2>
 <div class="examples">
     {% for ex in examples %}
     <button type="button" class="example" data-text="{{ ex.text }}">
-        <span class="example-label">{{ ex.label }}</span>
+        <span class="example-top">
+            <span class="example-label">{{ ex.label }}</span>
+            <span class="truth truth-{{ ex.truth | lower }}">{{ ex.truth }}</span>
+        </span>
         <span class="example-hint">{{ ex.hint }}</span>
     </button>
     {% endfor %}
 </div>
 <p class="muted" style="margin-top:10px;">
-    These illustrate writing <em>registers</em>, not labelled ground truth — they
-    were composed for the demo, so treat the verdicts as a look at how the models
-    respond to style, not as a scorecard. For measured accuracy on held-out data,
-    see <a href="/about" style="color:var(--ai);">Method &amp; Results</a>.
+    Every sample is a real row from the held-out RAID test split, so the badge is
+    verified ground truth and no model saw it during training. The two research
+    abstracts share a subject on purpose — one human, one generated — since
+    telling those apart cannot be done on topic alone.
 </p>
 
 <h2 class="section-title">How it works</h2>
@@ -68,7 +71,16 @@
         display: flex; flex-direction: column; gap: 3px;
     }
     .example:hover { border-color: var(--ai); background: var(--surface-2); }
+    .example-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .example-label { color: var(--ink); font-size: 0.88rem; font-weight: 620; }
+    /* Ground-truth badge. Text carries the label, so colour is never the only cue. */
+    .truth {
+        font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
+        text-transform: uppercase; padding: 2px 7px; border-radius: 20px;
+        border: 1px solid currentColor; white-space: nowrap; flex-shrink: 0;
+    }
+    .truth-human { color: var(--human); background: rgba(25,158,112,0.10); }
+    .truth-ai    { color: var(--ai);    background: rgba(144,133,233,0.10); }
     .example-hint  { color: var(--ink-muted); font-size: 0.79rem; line-height: 1.45; }
 
     .how { font-size: 0.9rem; color: var(--ink-2); }

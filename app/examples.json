@@ -1,26 +1,44 @@
 [
   {
-    "id": "assistant-explainer",
-    "label": "Assistant-style explainer",
-    "hint": "Uniform sentence length, hedged transitions, tidy structure.",
-    "text": "Photosynthesis is a fundamental biological process that allows plants to convert light energy into chemical energy. It is important to note that this process occurs primarily in the chloroplasts, which contain a green pigment called chlorophyll. There are two main stages involved: the light-dependent reactions and the Calvin cycle. During the light-dependent reactions, water molecules are split, releasing oxygen as a byproduct. Subsequently, the Calvin cycle uses the resulting energy carriers to fix carbon dioxide into glucose. Overall, photosynthesis plays a crucial role in sustaining life on Earth by producing both oxygen and the organic compounds that form the base of most food chains."
+    "id": "human-recipe",
+    "truth": "Human",
+    "label": "Recipe",
+    "hint": "Ingredient list and terse instructions, written by a person.",
+    "text": "1 medium eggplant, cut into cubes 2 tablespoons finely chopped garlic 1 tablespoon chopped fresh parsley, chopped 2 ounces parmigiano-reggiano cheese 1 quart of white wine 1 lemon (may be substituted) Preheat oven to 375 degrees. Brown bacon in large skillet. Add onion and cook for 2 minutes. Add eggplant, season with salt and pepper and cook until tender, about 4 minutes. Remove from heat and cool. When cool, add bread, garlic, and bacon to eggplant and stir until well mixed. Add the parsley and cheese and mix well. Preheat broiler. Season trout with salt and pepper. Place on foil and reheat until warmed through. Then stuff the cavity with the eggplant mixture, add the wine, and fold foil over to seal, making a packet. Cook under broiler for about 25 minutes, or until fillets are flaky. Squeeze lemon juice over trout and serve on a large platter. Drizzle with olive oil and garnish with fresh parsley."
   },
   {
-    "id": "casual-register",
-    "label": "Casual forum register",
-    "hint": "Lowercase, asides, ragged rhythm — style alone does not settle it.",
-    "text": "honestly I tried this for about three weeks and it just didn't stick. the first few days were fine — I was motivated, I had my little spreadsheet, all that. then work got busy and the whole thing fell apart within like two days. I think the problem is that it assumes you have a stable schedule?? which, if you work shifts, you really don't. my coworker swears by it but she's also the kind of person who meal preps on sundays so. anyway if anyone has something that works for irregular hours I'm all ears, genuinely running out of ideas here."
+    "id": "human-news",
+    "truth": "Human",
+    "label": "Sports report",
+    "hint": "Human-written match report with quotes and uneven rhythm.",
+    "text": "Manchester United's Alex Ferguson has praised his players' gutsy performance in the 3-0 win at Aston Villa. \"That was our hardest away game of the season and it was a fantastic game of football, end-to-end with lots of good passing,\" said the Old Trafford boss. \"We showed lots of character and guts and we weren't going to lose. \"I look at that fixture and think we've been there and won, while Arsenal and Chelsea have yet to come and Villa may have some players back when they do.\" Ferguson also hailed senior stars Ryan Giggs and Roy Keane, who came off the bench for the injured John O'Shea. \"Roy came on and brought a bit of composure to the midfield which we needed and which no other player has got. \"Giggs was a tremendous threat and he brings tremendous penetration. \"All we can do is maintain our form, play as we are and we'll get our rewards.\""
   },
   {
-    "id": "dense-technical",
-    "label": "Dense technical prose",
-    "hint": "Specific, idiosyncratic detail — a harder case for every model.",
-    "text": "The tricky part wasn't the parser, it was cache invalidation across the two stores. We had a write-through cache in front of Postgres and a separate read replica that the analytics job hammered every fifteen minutes. Under load the replica lag would spike to eight or nine seconds, and any request that landed in that window would read a stale row, write a derived value based on it, and then the write-through would happily persist the wrong number. Took us two weeks to find because it only reproduced under concurrent load, and our staging environment ran a single instance."
+    "id": "human-abstract",
+    "truth": "Human",
+    "label": "Research abstract",
+    "hint": "A real paper abstract \u2014 same subject as the AI samples below.",
+    "text": "Deep convolutional networks have reached state-of-the-art performance in many medical image segmentation tasks. However, to generalize from one domain (e.g., one modality) to another, a domain adaptation step is required. In general, supervised domain adaptation yields the best results, but it requires a large amount of labeled data, which is often not available in practice. On the other hand, unsupervised methods require no new labeled data, but are usually unstable and hard to train. In this work, we propose a novel weakly supervised method. Instead of the detailed and time-consuming annotations, we just annotate a few examples from the target domain. This method is very easy to train because we add a regularization term to our loss function. Our method is evaluated on a case study of vestibular schwannoma (T1 to T2 MR images). Our proposed method outperforms unsupervised methods and achieves comparable results to a supervised method."
   },
   {
-    "id": "short-listy",
-    "label": "Short, listy reply",
-    "hint": "Too short for stylometry — watch the models split.",
-    "text": "Certainly! Here are a few key considerations to keep in mind. First, ensure that your data is properly validated before processing. Second, consider implementing appropriate error handling. Finally, remember to document your approach thoroughly."
+    "id": "ai-abstract-seg",
+    "truth": "AI",
+    "label": "Generated abstract",
+    "hint": "Machine-written, on the same topic as the human abstract above.",
+    "text": "This study proposes a method of training multi-organ segmentation networks using sample selection based on relaxed upper confident bound. The approach aims to improve network performance and reduce overfitting through selective use of datasets, focusing primarily on enhancing accuracy in segmenting multiple organs simultaneously. By utilizing this strategy, researchers can increase efficiency during model development without sacrificing overall effectiveness or generalization capabilities. This innovative technique offers promising potential within medical imaging applications requiring precise identification and separation of various anatomical structures from raw image data sets."
+  },
+  {
+    "id": "ai-abstract-math",
+    "truth": "AI",
+    "label": "Generated abstract",
+    "hint": "Machine-written on a different subject.",
+    "text": "This paper investigates the asymptotics of minimal overlapping patterns for three combinatorial structures: generalized Euler permutations, standard tableaux of rectangular shape, and colum strict arrays. Using advanced mathematical techniques, the authors derive precise asymptotic formulas for the number of minimal overlapping patterns in each structure, providing new insights into the underlying combinatorics and revealing surprising connections between these seemingly unrelated objects. The results of this study have important implications for a wide range of applications in combinatorics, algebraic geometry, and other fields."
+  },
+  {
+    "id": "ai-explainer",
+    "truth": "AI",
+    "label": "Generated explainer",
+    "hint": "Machine-written expository prose \u2014 evenly paced and hedged.",
+    "text": "Aerial image segmentation is the process of dividing an aerial image into multiple regions, each representing a specific object or feature. This task is crucial for various applications, including object detection, image classification, and image enhancement. In this paper, we propose a novel approach to learning aerial image segmentation from online maps. Our approach leverages the rich information available in online maps, including labeled images, geographic information, and contextual information, to train a deep neural network for aerial image segmentation. We evaluate our approach on a large dataset of aerial images and demonstrate its effectiveness in achieving state-of-the-art performance on aerial image segmentation tasks. Our work has significant implications for the development of autonomous systems and the automation of various tasks in the field of geospatial analysis."
   }
 ]
