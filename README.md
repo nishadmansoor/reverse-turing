@@ -23,7 +23,7 @@ split rather than on training data.
 
 Majority-class baseline: 51.51%. The ensemble outperforms every individual
 model, and precision and recall stay balanced across both classes
-(Human 0.9928 / 0.9911, AI 0.9916 / 0.9932).
+(Human 0.9935 / 0.9911, AI 0.9916 / 0.9939).
 
 Reproduce with `python src/train_meta.py --dataset raid --backend onnx`; the
 full report is written to `results/evaluation_raid_int8.json`.
@@ -130,9 +130,12 @@ curl -X POST http://localhost:5001/api/classify \
 | | Samples | Notes |
 |---|---|---|
 | **RAID** (current) | 156k prepared splits | Many modern generators (GPT, Llama, Mistral, MPT) |
+| HC3 | 168k | Early-ChatGPT era; pipeline retained for comparison |
 
-RAID is materially harder: the stylometric model scores ~91% on HC3 but only
-~77% on RAID, because modern generators imitate human style far more closely.
+All reported figures are on RAID. HC3 captures a single 2022-era generator,
+making it both an easier and a less representative target, and the gap is
+measurable: the same stylometric model scores ~91% on HC3 but only ~77% on
+RAID, because modern generators imitate human style far more closely.
 
 ## Project structure
 
@@ -168,9 +171,10 @@ four files, which is how the training and serving paths drift apart.
 
 - **Short text is unreliable.** Below ~50 words the stylometric features are
   mostly noise.
-- **Domain shift hurts.** These numbers are in-distribution for RAID, and the
-  splits skew heavily toward one of its eight domains (see Datasets). Text from
-  a different domain, or a generator newer than the training data, will score
+- **Domain shift hurts.** These numbers are in-distribution for RAID. The raw
+  corpus is ordered by domain and the loader reads it sequentially, so these
+  splits are drawn mostly from one of RAID's eight domains. Text from a
+  different domain, or a generator newer than the training data, will score
   worse.
 - **Editing defeats it.** Human-revised generated text carries both signatures.
 - **Not proof of authorship.** Every output is a probability.
