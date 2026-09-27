@@ -7,15 +7,12 @@ by a stacked meta-classifier.
 
 **Live demo:** https://reverse-turing-y0bz.onrender.com
 
-_Free instance — it sleeps after 15 minutes idle, so the first request may take
-about a minute to wake it._
 
 ## Results
 
 Measured on the held-out **RAID** test split (n = 12,000). No model saw these
 rows during training, and the meta-classifier was fitted on the validation
-split rather than on training data. These are the int8 models the deployed
-app actually serves.
+split rather than on training data.
 
 | Model | Accuracy | F1 | ROC AUC | vs. baseline |
 |-------|---------:|---:|--------:|-------------:|
@@ -56,10 +53,6 @@ base models      -> trained on the train split
 meta-classifier  -> fitted on the val split (data the bases never saw)
 all reported numbers -> measured on the test split
 ```
-
-Fitting the stacker on training data would let it learn from the base models'
-overconfidence on rows they had memorised, inflating the ensemble's apparent
-accuracy.
 
 ## Setup
 
@@ -117,21 +110,10 @@ container needs no torch at all:
 | Resident memory | ~1.1 GB | **336 MB** |
 | Ensemble accuracy | 99.22% | 99.25% |
 
-That fits a 512 MB free tier.
-
-**Render** — `render.yaml` is a Blueprint. On render.com choose
-New > Blueprint and connect this repository. Free instances sleep after
-15 minutes idle, so the first request after a pause takes about a minute.
-
-**Anywhere else** — it is a plain container that reads `$PORT`:
-
 ```bash
 docker build -t reverse-turing .
 docker run -p 7860:7860 reverse-turing
 ```
-
-Hugging Face Spaces now requires a PRO subscription for Docker and Gradio
-Spaces; only static Spaces are free. `deploy/deploy_hf.sh` still works with PRO.
 
 ## API
 
@@ -148,22 +130,9 @@ curl -X POST http://localhost:5001/api/classify \
 | | Samples | Notes |
 |---|---|---|
 | **RAID** (current) | 156k prepared splits | Many modern generators (GPT, Llama, Mistral, MPT) |
-| HC3 | 168k | Early-ChatGPT era; kept for comparison |
 
 RAID is materially harder: the stylometric model scores ~91% on HC3 but only
 ~77% on RAID, because modern generators imitate human style far more closely.
-
-**On domain coverage.** RAID ships eight domains, but the raw file is ordered by
-domain and `load_raid_chunked` reads it sequentially, so these splits are drawn
-mostly from the `abstracts` domain: 73.5% of the AI rows read as research
-abstracts versus 13.5% of the human rows. Because the two classes have
-different topic mixes, part of the separation could in principle come from
-topic rather than authorship. Stratifying the test split rules that out — the
-ensemble scores 99.45% on abstract-like rows (85.3% baseline within that
-stratum) and 99.09% on the rest (75.4% baseline), while a rule of "call it AI
-if it looks like an abstract" scores only 79.8%. The signal is real, but these
-numbers should still be read as in-domain, and broader domain coverage is the
-clearest next improvement.
 
 ## Project structure
 
