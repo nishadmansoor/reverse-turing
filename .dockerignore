@@ -25,7 +25,6 @@ __pycache__/
 .vscode/
 .idea/
 *.log
-deploy/
 
 # Training-only code — not imported by the app.
 src/pipeline.py
