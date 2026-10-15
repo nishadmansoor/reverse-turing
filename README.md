@@ -207,7 +207,6 @@ reverse-turing/
 ├── models/
 │   ├── onnx/                  # int8 models the app serves (71 MB)
 │   └── ...                    # full-precision training outputs, via Git LFS
-├── render.yaml                # Optional container deployment
 └── Dockerfile
 ```
 

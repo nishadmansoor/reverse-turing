@@ -53,8 +53,8 @@ EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')"
 
-# Shell form so $PORT expands: hosts inject their own port (Render, Cloud Run,
-# Fly), and 7860 is only the local default.
+# Shell form so $PORT expands: container hosts inject their own port, and
+# 7860 is only the local default.
 #
 # One worker with threads: a second worker would duplicate the loaded graphs in
 # memory. onnxruntime releases the GIL during inference, so threads serve
