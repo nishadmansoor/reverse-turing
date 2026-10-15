@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Method &amp; Results — Reverse Turing Test</title>
+<link rel="stylesheet" href="./css/style.css">
+<style>
+  .row-highlight td { background: rgba(144,133,233,.09); font-weight: 620; color: var(--ink); }
+  .delta { color: var(--good); }
+  .protocol { padding-left: 20px; display: grid; gap: 9px; font-size: .89rem; }
+  .protocol strong { color: var(--ink); }
+  .signals dt { color: var(--ink); font-weight: 620; font-size: .9rem; margin-top: 16px; }
+  .signals dt:first-child { margin-top: 0; }
+  .signals dd { font-size: .86rem; color: var(--ink-2); margin-top: 4px; line-height: 1.6; }
+  .limits { padding-left: 20px; display: grid; gap: 10px; font-size: .87rem; }
+  .limits strong { color: var(--ink); }
+  code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; font-size: .85em; color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="masthead">
+    <h1><a href="./">Reverse Turing Test</a></h1>
+    <p class="tagline">What was measured, how, and where it fails.</p>
+  </header>
+  <nav class="crumbs">
+    <a href="./">Classify</a>
+    <a href="./explore.html">Dataset Explorer</a>
+    <a href="./about.html" class="active">Method &amp; Results</a>
+  </nav>
+
+  <h2 class="section-title">Results</h2>
+  <div class="panel">
+    <table class="data">
+      <thead><tr><th>Model</th><th>Accuracy</th><th>F1</th><th>ROC&nbsp;AUC</th><th>vs. baseline</th></tr></thead>
+      <tbody id="results"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <p class="muted" style="margin-top:10px;" id="results-note"></p>
+
+  <h2 class="section-title">How the ensemble is built</h2>
+  <div class="panel">
+    <ol class="protocol">
+      <li><strong>Base models</strong> train on the training split.</li>
+      <li><strong>The meta-classifier</strong> is fitted on the validation split, using
+          the three models' output probabilities as its only inputs.</li>
+      <li><strong>Every number above</strong> is measured on the test split.</li>
+    </ol>
+    <p class="muted" style="margin-top:14px;">
+      The meta-classifier is deliberately fitted on data the base models never
+      trained on. Fitting it on the training split instead would let it learn from
+      their overconfidence on rows they had memorised, and the ensemble would look
+      better than it is.
+    </p>
+  </div>
+
+  <h2 class="section-title">The three signals</h2>
+  <div class="panel">
+    <dl class="signals">
+      <dt>Transformer (DistilBERT)</dt>
+      <dd>Fine-tuned on the training split, reading up to 256 tokens. Catches
+          phrasing and semantics that statistics miss, but degrades on text
+          unlike anything it trained on.</dd>
+      <dt>Stylometric (logistic regression)</dt>
+      <dd>Five features: average sentence length, sentence-length variance,
+          average word length, vocabulary richness, punctuation density.
+          Cheap, interpretable, and surprisingly hard to beat — but it needs
+          enough text for the statistics to stabilise.</dd>
+      <dt>Visual CNN</dt>
+      <dd>Renders each text as a 224×224 heatmap — one row per sentence, one
+          column per measurement — and classifies the resulting texture. It sees
+          structural rhythm rather than words.</dd>
+    </dl>
+  </div>
+
+  <h2 class="section-title">Running in your browser</h2>
+  <div class="panel">
+    <p class="muted">
+      There is no inference server. Both neural models were converted to int8
+      ONNX — about four times smaller than the originals — and run through ONNX
+      Runtime Web via WebAssembly, while the stylometric and stacking models are
+      a few lines of arithmetic. The text you paste never leaves your device.
+    </p>
+    <p class="muted" style="margin-top:12px;">
+      The JavaScript port reproduces the Python pipeline exactly, down to
+      float32 rounding in the heatmap encoding and OpenCV's colour-map table.
+      A fixture of Python-generated values is replayed against it in
+      <code>web/parity.html</code>, so a port that drifted would fail loudly
+      rather than quietly degrade predictions.
+    </p>
+  </div>
+
+  <h2 class="section-title">How these numbers are checked</h2>
+  <div class="panel">
+    <ul class="limits">
+      <li><strong>Measured against a baseline.</strong> Every model is compared
+          to the majority-class baseline. A classifier that cannot clear it has
+          learned nothing, whatever its raw accuracy suggests.</li>
+      <li><strong>Scored on unseen data.</strong> The meta-classifier is fitted
+          on validation and evaluated on test, so the ensemble is never scored
+          on data used to tune it.</li>
+      <li><strong>Reproducible end to end.</strong> Every figure here is
+          regenerated by <code>src/train_meta.py</code>.</li>
+    </ul>
+  </div>
+
+  <h2 class="section-title">Known limitations</h2>
+  <div class="panel">
+    <ul class="limits">
+      <li><strong>Short text is unreliable.</strong> Below roughly 50 words the
+          stylometric features are dominated by noise, and the ensemble leans
+          almost entirely on the transformer.</li>
+      <li><strong>Domain shift hurts.</strong> These numbers are in-distribution
+          for RAID, whose splits skew toward one of its eight domains. Text from
+          a different domain — or a newer generator — should be expected to
+          score worse.</li>
+      <li><strong>Editing defeats it.</strong> Generated text that a human has
+          revised carries a mix of both signatures, which is exactly the region
+          where the models disagree most.</li>
+      <li><strong>This is not proof of authorship.</strong> Every output is a
+          probability. Do not use it to accuse anyone of anything.</li>
+    </ul>
+  </div>
+
+  <div class="footnote">
+    <a href="https://github.com/nishadmansoor/reverse-turing">Source on GitHub</a>
+  </div>
+</div>
+
+<script type="module">
+const DISPLAY = {
+  transformer: "Transformer (DistilBERT)",
+  stylometric: "Stylometric",
+  cnn: "Visual CNN",
+  ensemble: "Ensemble (stacked)",
+};
+try {
+  const r = await fetch("./data/evaluation.json").then((x) => x.json());
+  const base = r.models.ensemble.majority_baseline;
+  document.getElementById("results").innerHTML = Object.entries(r.models).map(([k, m]) => `
+    <tr class="${k === "ensemble" ? "row-highlight" : ""}">
+      <td>${DISPLAY[k] || k}</td>
+      <td>${(m.accuracy * 100).toFixed(2)}%</td>
+      <td>${(m.f1 * 100).toFixed(2)}%</td>
+      <td>${(m.roc_auc * 100).toFixed(2)}%</td>
+      <td class="delta">${((m.accuracy - m.majority_baseline) * 100 >= 0 ? "+" : "")}${((m.accuracy - m.majority_baseline) * 100).toFixed(1)} pts</td>
+    </tr>`).join("");
+  document.getElementById("results-note").innerHTML =
+    `Measured on the held-out <strong>${r.dataset.toUpperCase()}</strong> test split
+     (${r.test_rows.toLocaleString()} samples), which no model saw during training.
+     "vs. baseline" compares against always guessing the majority class
+     (${(base * 100).toFixed(1)}%) — a model that can't beat that number has learned nothing.`;
+} catch (e) {
+  document.getElementById("results").innerHTML =
+    `<tr><td colspan="5" class="muted">Could not load evaluation report.</td></tr>`;
+}
+</script>
+</body>
+</html>

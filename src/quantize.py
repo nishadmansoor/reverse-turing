@@ -137,10 +137,17 @@ def export_cnn() -> None:
     logger.info("  fp32 ONNX: %.1f MB", _mb(fp32_path))
 
     logger.info("  quantizing to int8...")
+    # MatMul/Gemm only. Quantizing the conv layers emits ConvInteger, which
+    # onnxruntime-web's WASM backend has no kernel for ("Could not find an
+    # implementation for ConvInteger"), and the browser build has to load this
+    # same file. Nothing is lost by skipping them: the fully-connected layer
+    # holds 6.4M of the model's 6.5M parameters, so the convs contribute almost
+    # none of the size.
     quantize_dynamic(
         model_input=str(fp32_path),
         model_output=str(int8_path),
         weight_type=QuantType.QInt8,
+        op_types_to_quantize=["MatMul", "Gemm"],
     )
     logger.info("  int8 ONNX: %.1f MB  (%.1fx smaller)",
                 _mb(int8_path), _mb(fp32_path) / _mb(int8_path))

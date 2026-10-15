@@ -1,0 +1,88 @@
+{
+  "evaluated_at": "2026-10-15T00:54:07+00:00",
+  "dataset": "raid",
+  "backend": "onnx",
+  "val_rows_for_stacker": 13876,
+  "test_rows": 12000,
+  "meta_coefficients": {
+    "bert_ai_prob": 6.779361345525713,
+    "stylo_ai_prob": -0.695542735703633,
+    "cv_ai_prob": 5.868224947310578,
+    "word_count": 0.0037660981792386303,
+    "sentence_count": -0.014466855143556667
+  },
+  "models": {
+    "transformer": {
+      "accuracy": 0.9879166666666667,
+      "precision": 0.9824168797953964,
+      "recall": 0.9943374858437146,
+      "f1": 0.9883412398488381,
+      "confusion_matrix": [
+        [
+          5709,
+          110
+        ],
+        [
+          35,
+          6146
+        ]
+      ],
+      "majority_baseline": 0.5150833333333333,
+      "roc_auc": 0.9994386002217184
+    },
+    "stylometric": {
+      "accuracy": 0.76775,
+      "precision": 0.7464420563462097,
+      "recall": 0.8315806503801974,
+      "f1": 0.7867146246269228,
+      "confusion_matrix": [
+        [
+          4073,
+          1746
+        ],
+        [
+          1041,
+          5140
+        ]
+      ],
+      "majority_baseline": 0.5150833333333333,
+      "roc_auc": 0.7688758094553768
+    },
+    "cnn": {
+      "accuracy": 0.97525,
+      "precision": 0.9788411458333334,
+      "recall": 0.9729817181685811,
+      "f1": 0.9759026369168357,
+      "confusion_matrix": [
+        [
+          5689,
+          130
+        ],
+        [
+          167,
+          6014
+        ]
+      ],
+      "majority_baseline": 0.5150833333333333,
+      "roc_auc": 0.9964439583477619
+    },
+    "ensemble": {
+      "accuracy": 0.99275,
+      "precision": 0.9917688831504197,
+      "recall": 0.9941756997249636,
+      "f1": 0.9929708329966874,
+      "confusion_matrix": [
+        [
+          5768,
+          51
+        ],
+        [
+          36,
+          6145
+        ]
+      ],
+      "majority_baseline": 0.5150833333333333,
+      "roc_auc": 0.9994934278942011
+    }
+  }
+}

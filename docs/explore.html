@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dataset Explorer — Reverse Turing Test</title>
+<link rel="stylesheet" href="./css/style.css">
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
+  @media (max-width: 620px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 15px; text-align: center; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--ink); }
+  .stat-value.human { color: var(--human); }
+  .stat-value.ai { color: var(--ai); }
+  .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-muted); margin-top: 3px; }
+
+  .overlay-row { display: flex; gap: 10px; align-items: flex-start; }
+  @media (max-width: 620px) { .overlay-row { flex-direction: column; } }
+  .overlay-row textarea { min-height: 58px; flex: 1; }
+  .overlay-row .btn { white-space: nowrap; }
+
+  .filters { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .filters label { font-size: .8rem; color: var(--ink-muted); }
+  .filters select {
+    background: var(--surface); border: 1px solid var(--border); color: var(--ink-2);
+    padding: 7px 11px; border-radius: 8px; font-size: .85rem; font-family: inherit;
+  }
+  .filters select:focus { outline: none; border-color: var(--ai); }
+
+  #scatter { width: 100%; height: 500px; }
+  .loading { text-align: center; color: var(--ink-muted); padding: 80px 0; font-size: .9rem; }
+  .axis-note { font-size: .78rem; color: var(--ink-muted); margin-top: 10px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="masthead">
+    <h1><a href="./">Reverse Turing Test</a></h1>
+    <p class="tagline" id="tagline">Where does your writing sit among the labelled samples?</p>
+  </header>
+  <nav class="crumbs">
+    <a href="./">Classify</a>
+    <a href="./explore.html" class="active">Dataset Explorer</a>
+    <a href="./about.html">Method &amp; Results</a>
+  </nav>
+
+  <div class="stats-row">
+    <div class="stat"><div class="stat-value" id="stat-total">—</div><div class="stat-label">Samples plotted</div></div>
+    <div class="stat"><div class="stat-value human" id="stat-human">—</div><div class="stat-label">Human</div></div>
+    <div class="stat"><div class="stat-value ai" id="stat-ai">—</div><div class="stat-label">AI</div></div>
+    <div class="stat"><div class="stat-value" id="stat-acc">—</div><div class="stat-label" id="stat-acc-label">Ensemble accuracy</div></div>
+  </div>
+
+  <h2 class="section-title">Overlay your own text</h2>
+  <div class="panel">
+    <div class="overlay-row">
+      <textarea id="user-text" rows="2" placeholder="Paste text to drop it onto the map as a marked point…"></textarea>
+      <button class="btn" id="plot-btn">Plot it</button>
+    </div>
+    <p class="muted" id="overlay-status" style="margin-top:8px;"></p>
+  </div>
+
+  <h2 class="section-title">Feature space</h2>
+  <div class="filters">
+    <label for="mode">View</label>
+    <select id="mode">
+      <option value="true_label">True label</option>
+      <option value="bert">Where BERT is wrong</option>
+      <option value="stylo">Where Stylometric is wrong</option>
+      <option value="cnn">Where the CNN is wrong</option>
+    </select>
+  </div>
+
+  <div class="panel">
+    <div id="scatter"><p class="loading">Loading dataset…</p></div>
+    <p class="axis-note" id="axis-note"></p>
+  </div>
+
+  <h2 class="section-title">Reading this plot</h2>
+  <div class="panel">
+    <p class="muted">
+      The classes overlap heavily, and that overlap is the honest result: plenty
+      of human writing is statistically indistinguishable from generated text on
+      these five features alone. That is precisely why the ensemble also reads
+      the language itself rather than relying on style statistics. Switch the
+      view above to see which samples each model gets wrong — errors cluster
+      where the classes intermingle.
+    </p>
+  </div>
+
+  <div class="footnote">
+    <a href="https://github.com/nishadmansoor/reverse-turing">Source on GitHub</a>
+  </div>
+</div>
+
+<script type="module">
+import { setParams, extractFeatures, pcaTransform } from "./js/features.js";
+
+const HUMAN = "#199e70", AI = "#9085e9", MUTED = "#898781", CRITICAL = "#d03b3b";
+const $ = (id) => document.getElementById(id);
+let data = null, params = null, meta = null, userPoint = null;
+
+const layout = {
+  font: { color: "#c3c2b7", size: 12, family: "system-ui, -apple-system, sans-serif" },
+  paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+  xaxis: { title: "PC1", gridcolor: "#2c2c2a", zerolinecolor: "#383835", linecolor: "#383835" },
+  yaxis: { title: "PC2", gridcolor: "#2c2c2a", zerolinecolor: "#383835", linecolor: "#383835" },
+  margin: { l: 55, r: 16, t: 10, b: 48 },
+  showlegend: true, legend: { orientation: "h", y: -0.16, font: { size: 11 } },
+  hovermode: "closest",
+};
+const config = { responsive: true, displayModeBar: false };
+
+const hover = (i) =>
+  `True: ${data.true_label[i] ? "AI" : "Human"}` +
+  `<br>BERT: ${data.bert_pred[i] ? "AI" : "Human"}` +
+  `<br>Stylometric: ${data.stylo_pred[i] ? "AI" : "Human"}` +
+  (data.cnn_pred ? `<br>CNN: ${data.cnn_pred[i] ? "AI" : "Human"}` : "") +
+  `<br><br>${data.text_preview[i].replace(/(.{48})/g, "$1<br>")}…`;
+
+const subset = (idx, name, color, symbol, size, opacity) => ({
+  x: idx.map((i) => data.x[i]), y: idx.map((i) => data.y[i]), text: idx.map(hover),
+  name, mode: "markers", type: "scattergl",
+  marker: { color, size, symbol, opacity, line: { width: 0 } }, hoverinfo: "text",
+});
+
+function traces(mode) {
+  const all = data.true_label.map((_, i) => i);
+  if (mode === "true_label") {
+    return [
+      subset(all.filter((i) => !data.true_label[i]), "Human", HUMAN, "circle", 5, 0.55),
+      subset(all.filter((i) => data.true_label[i]), "AI", AI, "circle", 5, 0.55),
+    ];
+  }
+  // Error views use emphasis rather than a red/green pair: correct points
+  // recede to grey and errors get a distinct symbol as well as colour, so the
+  // distinction never rests on colour alone.
+  const key = mode === "bert" ? "bert_pred" : mode === "stylo" ? "stylo_pred" : "cnn_pred";
+  const right = all.filter((i) => data[key][i] === data.true_label[i]);
+  const wrong = all.filter((i) => data[key][i] !== data.true_label[i]);
+  return [
+    subset(right, `Correct (${right.length.toLocaleString()})`, MUTED, "circle", 4, 0.3),
+    subset(wrong, `Misclassified (${wrong.length.toLocaleString()})`, CRITICAL, "x", 7, 0.85),
+  ];
+}
+
+function render() {
+  const mode = $("mode").value;
+  const t = traces(mode);
+  if (userPoint) t.push(userPoint);
+  Plotly.react("scatter", t, layout, config);
+
+  const acc = meta?.explorer_sample_accuracy || {};
+  const map = { bert: "bert", stylo: "stylometric", cnn: "cnn" };
+  const key = mode === "true_label" ? "ensemble" : map[mode];
+  const label = { ensemble: "Ensemble", bert: "BERT", stylometric: "Stylometric", cnn: "CNN" }[key];
+  $("stat-acc").textContent = acc[key] !== undefined ? (acc[key] * 100).toFixed(1) + "%" : "—";
+  $("stat-acc-label").textContent = label + " accuracy";
+}
+
+[params, data, meta] = await Promise.all([
+  fetch("./data/params.json").then((r) => r.json()),
+  fetch("./data/explorer.json").then((r) => r.json()),
+  fetch("./data/metadata.json").then((r) => r.json()).catch(() => null),
+]);
+setParams(params);
+
+const n = data.true_label.length;
+const human = data.true_label.filter((l) => l === 0).length;
+$("stat-total").textContent = n.toLocaleString();
+$("stat-human").textContent = human.toLocaleString();
+$("stat-ai").textContent = (n - human).toLocaleString();
+$("tagline").textContent = `Where does your writing sit among ${n.toLocaleString()} labelled samples?`;
+
+const v = meta?.pca_variance_explained || params.pca.explained_variance_ratio;
+$("axis-note").textContent =
+  `Each point is one labelled sample, positioned by the two strongest directions of variation ` +
+  `in its five stylometric features (PC1 ${(v[0] * 100).toFixed(1)}%, PC2 ${(v[1] * 100).toFixed(1)}% of variance). ` +
+  `Nearby points have similar writing rhythm — not similar topics.`;
+
+render();
+$("mode").addEventListener("change", render);
+
+$("plot-btn").addEventListener("click", () => {
+  const text = $("user-text").value.trim();
+  if (text.length < 20) { $("overlay-status").textContent = "Enter at least 20 characters."; return; }
+  const [x, y] = pcaTransform(extractFeatures(text));
+  userPoint = {
+    x: [x], y: [y], text: ["Your text"], name: "Your text",
+    mode: "markers", type: "scattergl",
+    marker: { color: "#fab219", size: 15, symbol: "star", line: { color: "#1a1a19", width: 2 } },
+    hoverinfo: "text",
+  };
+  render();
+  $("overlay-status").textContent = "Plotted as the gold star.";
+});
+</script>
+</body>
+</html>

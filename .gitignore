@@ -1,7 +1,9 @@
 # Datasets — large and reproducible from the pipelines.
 #   HC3:  python src/pipeline.py
 #   RAID: python src/raid_pipeline.py --download
-data/
+# Leading slash anchors this to the repo root: an unanchored "data/" also
+# matches docs/data/, which holds the published site's payload.
+/data/
 
 # Training/eval outputs: keep the small JSON reports (they back the Method &
 # Results page and document the measured numbers), drop the bulky CSVs.

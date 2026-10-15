@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-09-09T23:24:17+00:00",
+  "built_at": "2026-10-15T02:41:02+00:00",
   "dataset": "raid",
   "backend": "onnx",
   "train_rows": 111006,
@@ -36,7 +36,7 @@
   "explorer_sample_accuracy": {
     "stylometric": 0.7746,
     "bert": 0.9878,
-    "cnn": 0.9778,
-    "ensemble": 0.9924
+    "cnn": 0.9776,
+    "ensemble": 0.9926
   }
 }

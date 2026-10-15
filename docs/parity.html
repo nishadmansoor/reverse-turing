@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parity check — Reverse Turing Test</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #0d0d0d; color: #c3c2b7; margin: 0; padding: 24px;
+    font-size: 13px; line-height: 1.5;
+  }
+  h1 { color: #fff; font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #898781; margin-bottom: 20px; font-size: 12px; }
+  .summary { padding: 14px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 14px; }
+  .pass { background: rgba(12,163,12,.12); border: 1px solid rgba(12,163,12,.45); color: #7ee07e; }
+  .fail { background: rgba(208,59,59,.12); border: 1px solid rgba(208,59,59,.5); color: #f0a3a3; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid #2c2c2a; }
+  th { color: #898781; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  td.ok { color: #0ca30c; } td.bad { color: #d03b3b; font-weight: 700; }
+  .txt { color: #898781; max-width: 300px; overflow: hidden;
+         text-overflow: ellipsis; white-space: nowrap; }
+  .detail { color: #d03b3b; font-size: 11px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Parity check</h1>
+<p class="sub">
+  Replays values produced by the Python pipeline through the JavaScript port.
+  Any mismatch means the browser build would feed the models different inputs
+  than they were trained on.
+</p>
+<div id="summary" class="summary">Running…</div>
+<table>
+  <thead>
+    <tr><th>#</th><th>Text</th><th>Features</th><th>Heatmap</th><th>Counts</th></tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<script type="module">
+import { setParams, extractFeatures, heatmapDebug, pySplit } from "./js/features.js";
+
+// Floating-point arithmetic differs in the last bits between numpy and JS.
+const EPS = 1e-9;
+const close = (a, b) => Math.abs(a - b) <= EPS * Math.max(1, Math.abs(a), Math.abs(b));
+
+const [params, fixture] = await Promise.all([
+  fetch("./data/params.json").then((r) => r.json()),
+  fetch("./data/parity.json").then((r) => r.json()),
+]);
+setParams(params);
+
+const rows = document.getElementById("rows");
+let failures = 0;
+const problems = [];
+
+fixture.forEach((c, i) => {
+  const feats = extractFeatures(c.text);
+  const featOk = feats.length === c.features.length
+    && feats.every((v, j) => close(v, c.features[j]));
+
+  const hm = heatmapDebug(c.text);
+  const hmOk = hm.sum === c.heatmap_sum
+    && hm.samples.every((v, j) => v === c.heatmap_samples[j]);
+
+  const wc = pySplit(c.text).length;
+  const sc = c.text.split(".").filter((s) => s.trim().length > 0).length;
+  const countOk = wc === c.word_count && sc === c.sentence_count;
+
+  if (!featOk || !hmOk || !countOk) {
+    failures += 1;
+    const detail = [];
+    if (!featOk) detail.push(`features\n  py: ${JSON.stringify(c.features)}\n  js: ${JSON.stringify(feats)}`);
+    if (!hmOk) detail.push(`heatmap\n  py: sum=${c.heatmap_sum} samples=${JSON.stringify(c.heatmap_samples)}\n  js: sum=${hm.sum} samples=${JSON.stringify(hm.samples)}`);
+    if (!countOk) detail.push(`counts\n  py: words=${c.word_count} sentences=${c.sentence_count}\n  js: words=${wc} sentences=${sc}`);
+    problems.push(`#${i}: ${detail.join("\n")}`);
+  }
+
+  const cell = (ok) => `<td class="${ok ? "ok" : "bad"}">${ok ? "pass" : "FAIL"}</td>`;
+  rows.insertAdjacentHTML("beforeend",
+    `<tr><td>${i}</td><td class="txt">${c.text.slice(0, 60).replace(/</g, "&lt;")}</td>` +
+    cell(featOk) + cell(hmOk) + cell(countOk) + `</tr>` +
+    (featOk && hmOk && countOk ? "" :
+      `<tr><td></td><td colspan="4" class="detail">${problems[problems.length - 1].replace(/</g, "&lt;")}</td></tr>`));
+});
+
+const summary = document.getElementById("summary");
+summary.className = "summary " + (failures ? "fail" : "pass");
+summary.textContent = failures
+  ? `${failures} of ${fixture.length} cases FAILED — the port does not match Python`
+  : `All ${fixture.length} cases match Python exactly`;
+window.__parity = { total: fixture.length, failures, problems };
+</script>
+</body>
+</html>
